@@ -1,6 +1,7 @@
 from typing import Any, Awaitable
 
 from fastapi import Body, FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from starlette.types import Receive, Scope, Send
 
@@ -42,14 +43,13 @@ class FastAPIWrapper(BaseWrapper):
             if isinstance(response, str):
                 return Response(content=response, media_type=route.content_type)
             if isinstance(response, dict):
-                return JSONResponse(content=response)
+                return JSONResponse(content=jsonable_encoder(response))
             if isinstance(response, AdminTableRoute.RouteResponse):
                 content_type = response.headers.get("content-type", None) or response.content_type or route.content_type
                 handler_response: JSONResponse | Response
                 if content_type == "application/json":
-                    print("response.body", response.body)
                     handler_response = JSONResponse(
-                        content=response.body,
+                        content=jsonable_encoder(response.body),
                         headers=response.headers,
                         status_code=response.status_code,
                     )

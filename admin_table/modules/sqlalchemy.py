@@ -127,9 +127,10 @@ class SQLAlchemyResolver(ResolverBase):
         """Resolve data of a single entry"""
         attributes = self.__resolve_model_attributes(resource)
         assert resource.id_col in attributes, f'Model does not have id col: "{resource.id_col}'
-        base_select = select(*[col.src for col in attributes.values()]).filter(
-            entry_id == attributes[resource.id_col].src
-        )
+        col_src: InstrumentedAttribute = attributes[resource.id_col].src
+        casted_id = col_src.type.python_type(entry_id)
+
+        base_select = select(*[col.src for col in attributes.values()]).filter(casted_id == col_src)
 
         with self.session_maker() as session:
             entry = session.execute(base_select).one()

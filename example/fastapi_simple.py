@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from models import Item, User
 from pydantic import Field, create_model
-from sqlalchemy import func, insert
+from sqlalchemy import func
 from sqlalchemy.orm import Query
 from starlette import status
 from starlette.responses import RedirectResponse
@@ -136,10 +136,11 @@ config = AdminTableConfig(
 Base.metadata.create_all(bind=engine)
 
 with SessionLocal() as session:
-    session.execute(insert(User).values(email=f"{random.randint(10, 10**10)}@email.local"))
-    session.execute(insert(User).values(email=f"{random.randint(10, 10**10)}@email.local"))
-    session.execute(insert(Item).values(title=f"item ...{random.randint(10, 10**10)}", owner_id=1))
-    session.execute(insert(Item).values(title=f"some item - {random.randint(10, 10**10)}", owner_id=2))
+    session.add(u1 := User(email=f"{random.randint(10, 10**10)}@email.local"))
+    session.add(u2 := User(email=f"{random.randint(10, 10**10)}@email.local"))
+    session.flush()
+    session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u1.id))
+    session.add(Item(title=f"other item {random.randint(10, 10**10)}", owner_id=u2.id))
     session.commit()
 
 at = AdminTable(config=config)
