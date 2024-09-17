@@ -1,4 +1,5 @@
 import dataclasses
+import random
 from typing import TYPE_CHECKING, Any, Callable, Generic, List, Optional, Tuple, TypeVar
 
 from pydantic import BaseModel
@@ -14,10 +15,17 @@ class DefaultAuthProvider:
     @dataclasses.dataclass
     class User:
         email: str
+        name: str | None = None
+        avatar: str | None = None
 
     def authenticate(self, username: str | None, password: str | None) -> User | Literal[False]:
-        if username == "admin" and password == "admin":
-            return self.User(email="admin@admin.local")
+        if username == "admin@admin.admin" and password == "admin@admin.admin":
+            return self.User(
+                email="admin@admin.admin",
+                name="Admin",
+                avatar=f"https://raw.githubusercontent.com/mantinedev/mantine/master/.demo/avatars/"
+                f"avatar-{random.randrange(0, 10)}.png",
+            )
         return False
 
     def generate_token(self, user: User) -> str:
@@ -26,8 +34,13 @@ class DefaultAuthProvider:
         return user.email
 
     def validate_token(self, token: str) -> User | Literal[False]:
-        if token == "admin@admin.local":
-            return self.User(email="admin@admin.local")
+        if token == "admin@admin.admin":
+            return self.User(
+                email="admin@admin.admin",
+                name="Admin",
+                avatar=f"https://raw.githubusercontent.com/mantinedev/mantine/master/.demo/avatars/"
+                f"avatar-{random.randrange(0, 10)}.png",
+            )
         return False
 
 

@@ -21,12 +21,7 @@ export const LoginPage = () => {
   const location = useLocation();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const from = location?.state?.from ?? { location: '/' };
-
-  // if user is already logged in, redirect to the page they came from
-  if (authService.isUserLoggedIn()) {
-    navigate(from);
-  }
+  const from = location?.state?.from ?? {pathname: '/'};
 
   // login form
   const form = useForm({
@@ -47,12 +42,15 @@ export const LoginPage = () => {
       await authService.login(values.email, values.password);
       notifications.show({
         title: 'Authentication Success',
-        message: 'You have been successfully authenticated',
+        message: `You have been successfully authenticated. Redirecting to ${decodeURI(from?.pathname)}`,
         color: 'green',
       });
       navigate(from);
     } catch (e: any) {
       setErrorMessage(e.toString());
+      setTimeout(() => {
+        setErrorMessage(null);
+      }, 5000);
     }
   };
 
@@ -86,7 +84,7 @@ export const LoginPage = () => {
             mt="md"
           />
           {errorMessage && (
-            <Text color="red" mt="md">
+            <Text c="red" mt="md">
               {errorMessage}
             </Text>
           )}

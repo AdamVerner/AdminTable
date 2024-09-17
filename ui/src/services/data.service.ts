@@ -3,7 +3,7 @@ import axios, { type AxiosError, type AxiosResponse } from 'axios';
 import { notifications } from '@mantine/notifications';
 import { authService } from '@/services/auth';
 
-const API_URL = './';
+const API_URL = import.meta.env?.VITE_API_URL ?? './';
 
 export const operators = {
   eq: '=',
@@ -44,7 +44,7 @@ export class DataAPI {
           authService.logout();
         }
 
-        throw new Error(e?.response?.data?.message ?? 'Request failed');
+        throw new Error(e?.response?.data?.message ?? `Request failed: ${e.message}`);
       });
   }
 }
@@ -79,6 +79,20 @@ type DataEntry =
 
 class DataService {
   data_api = new DataAPI(API_URL);
+
+  async ping(): Promise<void> {
+    await this.data_api.post('ping');
+  }
+
+  async login(username: string, password: string): Promise<{ token: string }> {
+    return await this.data_api.post('login', { username, password});
+  }
+
+  async getUserInfo(): Promise<{
+    user: {name?: string; email: string; avatar?: string}
+  }> {
+    return await this.data_api.get('user');
+  }
 
   async getNavigation(): Promise<{
     name: string;

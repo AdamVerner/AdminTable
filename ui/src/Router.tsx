@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   createHashRouter,
   Navigate,
@@ -7,6 +7,7 @@ import {
   RouterProvider,
   useLocation,
 } from 'react-router-dom';
+import Loader from '@/components/Loader';
 import CustomPage from '@/pages/CustomPage.page';
 import CreateResourcePage from '@/pages/ResourceCreate';
 import ResourceDetail from '@/pages/ResourceDetail';
@@ -18,9 +19,24 @@ import { LoginPage } from './pages/Login.page';
 
 const ProtectedRoutes = () => {
   const location = useLocation();
-  if (authService.isUserLoggedIn()) {
+  const [loading, setLoading] = useState(true);
+  const [loggedIn, setLoggedIn] = useState(false);
+
+  useEffect(() => {
+    authService.isUserLoggedIn().then((loggedIn) => {
+      setLoggedIn(loggedIn);
+    }).catch(()=>setLoggedIn(false)).finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return <Loader />;
+  }
+
+  if (loggedIn) {
     return <Outlet />;
   }
+
+  // return "home vole"
   return <Navigate to="/login" replace state={{ from: location }} />;
 };
 
@@ -55,10 +71,6 @@ const router = createHashRouter(
               element: <CustomPage />,
             },
           ],
-        },
-        {
-          path: '/protected',
-          element: <div>secret vole</div>,
         },
       ],
     },

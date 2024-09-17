@@ -153,7 +153,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/api/admin", FastAPIWrapper(at))
-app.get("/")(lambda: RedirectResponse("/api/admin", status_code=status.HTTP_303_SEE_OTHER))
+app.get("/")(lambda: RedirectResponse("/api/admin/", status_code=status.HTTP_301_MOVED_PERMANENTLY))
 
 if __name__ == "__main__":
     uvicorn.run("example.fastapi_simple:app", reload_dirs="./", reload=True)

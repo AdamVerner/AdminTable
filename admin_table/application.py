@@ -42,6 +42,9 @@ class AdminTableRoute:
         headers: dict[str, str] = dataclasses.field(default_factory=lambda: {})
         cookies: dict[str, str] = dataclasses.field(default_factory=lambda: {})
 
+        # user injected by protected decorator
+        user: DefaultAuthProvider.User | None = None
+
     @dataclasses.dataclass
     class RouteResponse:
         status_code: int = 200
@@ -87,6 +90,35 @@ class _HasConfig:
         if (view := resource.views.list) is None:
             raise ValueError(f"Resource '{resource.name}' has no list view configured")
         return view
+
+
+class AuthRouteMixin(_HasConfig):
+    @staticmethod
+    def protected(
+        handler: Callable[["AdminTable", AdminTableRoute.RouteRequest], AdminTableRoute.RouteResponse],
+    ) -> Callable[["AdminTable", AdminTableRoute.RouteRequest], AdminTableRoute.RouteResponse]:
+        def wrapped(admin_table: "AdminTable", request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+            if not (authorization := request.headers.get("Authorization", request.headers.get("authorization"))):
+                return AdminTableRoute.RouteResponse(
+                    status_code=401,
+                    body={"message": "Unauthorized"},
+                    content_type="application/json",
+                )
+
+            token = authorization.removeprefix("Bearer ")
+            if not (user := admin_table.config.auth_provider.validate_token(token)):
+                return AdminTableRoute.RouteResponse(
+                    status_code=401,
+                    body={"message": "Unauthorized"},
+                    content_type="application/json",
+                )
+
+            request.user = user
+
+            result = handler(admin_table, request)
+            return result
+
+        return wrapped
 
 
 class _Column:
@@ -221,7 +253,8 @@ def field_resolver(fields):
                 raise ValueError(f"Invalid field definition: {field}")
 
 
-class ListViewMixin(_HasConfig):
+class ListViewMixin(AuthRouteMixin, _HasConfig):
+    @AuthRouteMixin.protected
     def resource_list_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         resource = self.get_resource(request.path_params["resource"])
         view = self.get_view_list(resource)
@@ -313,14 +346,30 @@ class AdminTable(ListViewMixin, _HasConfig):
     def __init__(self, config: "AdminTableConfig"):
         super().__init__(config)
 
+        p = os.path.abspath(os.path.join(os.path.dirname(__file__), "ui/index.html"))
+        assert os.path.isfile(p), f"folder with UI not found at {p}"
+
     @property
     def routes(self) -> List[AdminTableRoute]:
+        # noinspection PyTypeChecker
         return [
+            AdminTableRoute(
+                path="/ping",
+                method="POST",
+                name="ping",
+                handler=self.ping_handler,
+            ),
             AdminTableRoute(
                 path="/login",
                 method="POST",
                 name="login",
                 handler=self.login_handler,
+            ),
+            AdminTableRoute(
+                path="/user",
+                method="GET",
+                name="userinfo",
+                handler=self.user_handler,
             ),
             AdminTableRoute(
                 path="/navigation",
@@ -373,6 +422,20 @@ class AdminTable(ListViewMixin, _HasConfig):
             AdminTableRoute(path="/{path:path}", method="GET", name="catch_all", handler=self.default_handler),
         ]
 
+    @AuthRouteMixin.protected
+    def user_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+        return AdminTableRoute.RouteResponse(
+            body={"user": dataclasses.asdict(request.user) if request.user else None},
+            content_type="application/json",
+        )
+
+    @AuthRouteMixin.protected
+    def ping_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+        return AdminTableRoute.RouteResponse(
+            body={"message": "pong", "user": dataclasses.asdict(request.user) if request.user else None},
+            content_type="application/json",
+        )
+
     def login_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         assert self.config.auth_provider is not None, "No auth provider configured"
         try:
@@ -395,6 +458,7 @@ class AdminTable(ListViewMixin, _HasConfig):
             content_type="application/json",
         )
 
+    @AuthRouteMixin.protected
     def navigation_handler(self, r: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         href_base = f"{r.url.scheme}://{r.url.host}:{r.url.port}{r.url.path.removesuffix('/navigation')}"
 
@@ -436,6 +500,7 @@ class AdminTable(ListViewMixin, _HasConfig):
             content_type="application/json",
         )
 
+    @AuthRouteMixin.protected
     def page_view_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         page_name = unquote(request.path_params["page_name"])
         for page in self.config.pages:
@@ -455,6 +520,7 @@ class AdminTable(ListViewMixin, _HasConfig):
             content_type="application/json",
         )
 
+    @AuthRouteMixin.protected
     def resource_create_get_schema_handler(
         self, request: AdminTableRoute.RouteRequest
     ) -> AdminTableRoute.RouteResponse:
@@ -468,6 +534,7 @@ class AdminTable(ListViewMixin, _HasConfig):
             content_type="application/json",
         )
 
+    @AuthRouteMixin.protected
     def resource_create_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         resource = self.get_resource(request.path_params["resource"])
         view = self.get_view_create(resource)
@@ -504,6 +571,7 @@ class AdminTable(ListViewMixin, _HasConfig):
             content_type="application/json",
         )
 
+    @AuthRouteMixin.protected
     def resource_detail_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         resource = self.get_resource(request.path_params["resource"])
         detail = self.get_view_detail(resource)
@@ -578,6 +646,7 @@ class AdminTable(ListViewMixin, _HasConfig):
             content_type="application/json",
         )
 
+    @AuthRouteMixin.protected
     def resource_action_call_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         resource = self.get_resource(request.path_params["resource"])
         detail = self.get_view_detail(resource)
@@ -610,10 +679,16 @@ class AdminTable(ListViewMixin, _HasConfig):
             content_type="application/json",
         )
 
+    @AuthRouteMixin.protected
     def dashboard_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
-        u = self.get_user(request)
+        if not request.user:
+            return AdminTableRoute.RouteResponse(
+                status_code=401,
+                body={"message": "Unauthorized"},
+                content_type="application/json",
+            )
         try:
-            content = self.config.dashboard(u)
+            content = self.config.dashboard(request.user)
             return AdminTableRoute.RouteResponse(
                 body={"content": content},
                 content_type="application/json",
@@ -647,14 +722,3 @@ class AdminTable(ListViewMixin, _HasConfig):
                 status_code=404,
                 body="Not Found",
             )
-
-    def get_user(self, request: AdminTableRoute.RouteRequest) -> DefaultAuthProvider.User:
-        token = request.headers.get("Authorization")
-        if not token:
-            raise ValueError("No token provided")
-
-        user = self.config.auth_provider.validate_token(token)
-        if not isinstance(user, DefaultAuthProvider.User):
-            raise ValueError("Invalid token")
-
-        return user
