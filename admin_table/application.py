@@ -481,7 +481,7 @@ class AdminTable(ListViewMixin, _HasConfig):
                                 "type": "resource",
                             }
                             for resource in self.config.resources
-                            if resource.navigation == drawer
+                            if resource.navigation == drawer and not resource.hidden
                         ]
                         + [
                             {

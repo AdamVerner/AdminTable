@@ -74,6 +74,7 @@ class Resource(Navigable):
     views: Annotated["ResourceViews", Doc("Resource views")]
     resolver: Annotated["ResolverBase", Doc("Resolver for the list view")]
     id_col: Annotated[str, Doc("Column to be used as the id column")] = "id"
+    hidden: Annotated[bool, Doc("If the resource should be hidden from the navigation")] = False
 
 
 @dataclasses.dataclass(kw_only=True)
