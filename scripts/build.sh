@@ -4,7 +4,10 @@ set -e
 set -x
 
 # build ui
-cd ui && yarn build && cd ..
+cd ui
+yarn test
+yarn build
+cd ..
 
 # copy ui into package
 rm -rf admin_table/ui

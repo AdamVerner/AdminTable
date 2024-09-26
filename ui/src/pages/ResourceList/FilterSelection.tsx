@@ -1,5 +1,5 @@
 import { IconX } from '@tabler/icons-react';
-import { Badge, Button, Group, Input, Select, Stack, Textarea } from '@mantine/core';
+import { Badge, Button, Group, Input, Select, Stack } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useTableParams } from '@/pages/ResourceList/utils';
 

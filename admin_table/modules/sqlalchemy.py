@@ -2,6 +2,7 @@ import ast
 import dataclasses
 from typing import Any, Callable, List, Literal, Optional, Tuple, Type, Union
 
+import sqlalchemy.exc
 from sqlalchemy import BinaryExpression, ColumnElement, select
 from sqlalchemy.orm import (
     ColumnProperty,
@@ -123,7 +124,7 @@ class SQLAlchemyResolver(ResolverBase):
             pagination={"page": page, "per_page": per_page, "total": total},
         )
 
-    def resolve_detail(self, resource: "Resource", entry_id: str) -> ResolvedData:
+    def resolve_detail(self, resource: "Resource", entry_id: str) -> ResolvedData | None:
         """Resolve data of a single entry"""
         attributes = self.__resolve_model_attributes(resource)
         assert resource.id_col in attributes, f'Model does not have id col: "{resource.id_col}'
@@ -133,7 +134,10 @@ class SQLAlchemyResolver(ResolverBase):
         base_select = select(*[col.src for col in attributes.values()]).filter(casted_id == col_src)
 
         with self.session_maker() as session:
-            entry = session.execute(base_select).one()
+            try:
+                entry = session.execute(base_select).one()
+            except sqlalchemy.exc.NoResultFound:
+                return None
 
         obj = {key: value for value, key in zip(entry, attributes.keys())}
 

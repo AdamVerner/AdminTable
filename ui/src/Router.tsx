@@ -23,9 +23,13 @@ const ProtectedRoutes = () => {
   const [loggedIn, setLoggedIn] = useState(false);
 
   useEffect(() => {
-    authService.isUserLoggedIn().then((loggedIn) => {
-      setLoggedIn(loggedIn);
-    }).catch(()=>setLoggedIn(false)).finally(() => setLoading(false));
+    authService
+      .isUserLoggedIn()
+      .then((loggedIn) => {
+        setLoggedIn(loggedIn);
+      })
+      .catch(() => setLoggedIn(false))
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) {

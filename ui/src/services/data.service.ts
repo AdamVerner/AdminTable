@@ -85,11 +85,11 @@ class DataService {
   }
 
   async login(username: string, password: string): Promise<{ token: string }> {
-    return await this.data_api.post('login', { username, password});
+    return await this.data_api.post('login', { username, password });
   }
 
   async getUserInfo(): Promise<{
-    user: {name?: string; email: string; avatar?: string}
+    user: { name?: string; email: string; avatar?: string };
   }> {
     return await this.data_api.get('user');
   }
@@ -190,6 +190,7 @@ class DataService {
     id: string
   ): Promise<{
     title: string;
+    description: string | null;
     fields: [DataHead, DataEntry][];
     actions: {
       title: string;
@@ -213,6 +214,12 @@ class DataService {
         val: string;
       };
     }[];
+    graphs: {
+      title: string;
+      description: string;
+      reference: string;
+      // graph data is fetched from separate endpoint
+    }[];
   }> {
     return await this.data_api.get(`resource/${resourceName}/detail/${id}`);
   }
@@ -232,6 +239,33 @@ class DataService {
     content: string;
   }> {
     return await this.data_api.get('banner');
+  }
+
+  async getDetailGraph(
+    resourceName: string,
+    detailId: string,
+    graphRef: string,
+    rangeFrom: string | null,
+    rangeTo: string | null
+  ): Promise<{
+    type: 'line' | 'bar' | 'area';
+    config: {
+      data: Record<string, any>[];
+      dataKey: string;
+      series: { name: string; color: string; [key: string]: any }[];
+      [key: string]: any;
+    };
+  }> {
+    const p = new URLSearchParams();
+    if (rangeFrom !== null) {
+      p.append('range_from', rangeFrom);
+    }
+    if (rangeTo !== null) {
+      p.append('range_to', rangeTo);
+    }
+    return await this.data_api.get(
+      `resource/${resourceName}/detail/${detailId}/graph/${graphRef}?${p.toString()}`
+    );
   }
 }
 

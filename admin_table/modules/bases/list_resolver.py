@@ -35,7 +35,7 @@ class ResolverBase(abc.ABC):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def resolve_detail(self, resource: "Resource", entry_id: str) -> ResolvedData:
+    def resolve_detail(self, resource: "Resource", entry_id: str) -> ResolvedData | None:
         raise NotImplementedError()
 
     @dataclasses.dataclass

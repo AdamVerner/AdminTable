@@ -26,7 +26,7 @@ export const Field = ({
         )}
         <Grid.Col span="auto">
           <i>
-            <DataField cell={field} />
+            <DataField title={head.display} cell={field} />
           </i>
         </Grid.Col>
       </Grid>

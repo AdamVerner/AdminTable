@@ -1,7 +1,6 @@
 import React from 'react';
 import Markdown from 'react-markdown';
 import { Link, useParams } from 'react-router-dom';
-import remarkGfm from 'remark-gfm';
 import { Button, Center, Group, Loader, Table, TypographyStylesProvider } from '@mantine/core';
 import PageSelect from '@/pages/ResourceList/PageSelect';
 import TableBody from '@/pages/ResourceList/TableBody';

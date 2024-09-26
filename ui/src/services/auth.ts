@@ -1,7 +1,5 @@
-import dataService from "@/services/data.service";
-import {redirect} from "react-router-dom";
+import dataService from '@/services/data.service';
 
-class UnauthenticatedError extends Error {}
 class AuthService {
   async login(username: string, password: string): Promise<boolean> {
     localStorage.removeItem('user');
@@ -15,27 +13,25 @@ class AuthService {
   async isUserLoggedIn(): Promise<boolean> {
     const user = localStorage.getItem('user');
     if (user == null) {
-        return false;
+      return false;
     }
     try {
-        await dataService.ping();
-        return true;
-    }
-    catch (e) {
-        return false;
+      await dataService.ping();
+      return true;
+    } catch (e) {
+      return false;
     }
   }
 
-    logout() {
+  logout() {
     // Remove the token from the local storage
     localStorage.removeItem('user');
   }
 
-
   getHeaders(): { Authorization?: string } {
     const user = localStorage.getItem('user');
     if (user == null) {
-      return {}
+      return {};
     }
     return { Authorization: `Bearer ${JSON.parse(user)?.token}` };
   }

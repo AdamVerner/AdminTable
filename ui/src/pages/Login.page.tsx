@@ -21,7 +21,7 @@ export const LoginPage = () => {
   const location = useLocation();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const from = location?.state?.from ?? {pathname: '/'};
+  const from = location?.state?.from ?? { pathname: '/' };
 
   // login form
   const form = useForm({

@@ -1,5 +1,6 @@
 import random
-from typing import Annotated
+from datetime import datetime, timedelta
+from typing import Annotated, Optional
 
 import uvicorn
 from base import Base, SessionLocal, engine
@@ -14,7 +15,16 @@ from starlette.responses import RedirectResponse
 from typing_extensions import Doc
 
 from admin_table import AdminTable, AdminTableConfig, Resource, ResourceViews
-from admin_table.config import CreateView, DetailView, LinkDetail, LinkTable, ListView, Page, SubTable
+from admin_table.config import (
+    CreateView,
+    DetailView,
+    LineGraphData,
+    LinkDetail,
+    LinkTable,
+    ListView,
+    Page,
+    SubTable,
+)
 from admin_table.modules.sqlalchemy import SQLAlchemyResolver
 from admin_table.wrappers import FastAPIWrapper
 
@@ -45,6 +55,31 @@ def hello(user: User, b1: bool, b2: bool, string1: str, string2: str, strin3: st
     raise Exception("World")
 
 
+def random_graph_data(
+    user: User, range_from: Optional[datetime] = None, range_to: Optional[datetime] = None
+) -> LineGraphData:
+    range_from = range_from or (datetime.now() - timedelta(days=10))
+    range_to = range_to or datetime.now()
+    range_to, range_from = sorted([range_to, range_from], reverse=True)
+    days = (range_to - range_from).days
+
+    return LineGraphData(
+        data=[
+            {
+                "date": range_from + timedelta(days=x),
+                "Blue param": 150 - x * 10,
+                "Red something": 50 + x * 2 + random.randint(-10, 15) * 10,
+            }
+            for x in range(days)
+        ],
+        dataKey="date",
+        series=[
+            {"name": "Blue param", "color": "indigo.6"},
+            {"name": "Red something", "color": "red.6"},
+        ],
+    )
+
+
 config = AdminTableConfig(
     name="Simple TableAPI example",
     dashboard=lambda u: f"# Dashboard\n\nWelcome {u.email} to Simple Example of TableAPI",
@@ -72,6 +107,7 @@ config = AdminTableConfig(
                 ),
                 detail=DetailView(
                     title='Details of user "${email}"',
+                    description=lambda d: f"Details of user {d.get('email', '')}",
                     fields=[
                         # "id", id added automatically, because detail view is enabled
                         "email",
@@ -79,13 +115,24 @@ config = AdminTableConfig(
                         ("Items", "item_count"),
                         ("Items Link", LinkTable("item_count", "Items", "owner_id", "eq", "id")),
                         (
-                            "CustomField",
+                            "Custom Field",
                             "This field has been computed",
-                            lambda d: f"Custom field with email: {d.get('email', '')}",
+                            lambda d: (f"Custom field with email: {d.get('email', '')}" * 10 + "\n") * 20,
+                        ),
+                        (
+                            "HTML Field",
+                            "This filed will open popup with rendered html content",
+                            lambda d: f'[[html]]<h2>Title</h2><ul>{'\n'.join(f'<li> Item {x}</li>' for x in range(10))}</ul>',
+                        ),
+                        (
+                            "Markdown Field",
+                            "This filed will open popup with rendered html content",
+                            lambda d: f'[[markdown]]## Custom Markdown Field\n\n {'\n'.join(f' - Item: {x}' for x in range(10))}',
                         ),
                     ],
                     actions=[custom_user_action, another_action, hello],
                     tables=[SubTable("Items", "Items", "owner_id", "eq", "id")],
+                    graphs=[random_graph_data],
                 ),
                 create=CreateView(
                     schema=create_model(
@@ -98,6 +145,7 @@ config = AdminTableConfig(
         Resource(
             navigation="Users",
             name="Items",
+            hidden=True,
             resolver=SQLAlchemyResolver(
                 SessionLocal,
                 Item,

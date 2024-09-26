@@ -1,4 +1,5 @@
 import dataclasses
+import datetime
 import logging
 import os.path
 import string
@@ -15,10 +16,12 @@ from .config import (
     CreateView,
     DefaultAuthProvider,
     DetailView,
+    GetGraphCallback,
     LinkDetail,
     LinkTable,
     ListView,
     Resource,
+    GraphData,
 )
 from .modules.bases.list_resolver import ResolverBase
 
@@ -70,25 +73,25 @@ class _HasConfig:
     def get_resource(self, resource_name: str) -> "Resource":
         resource = next((resource for resource in self.config.resources or [] if resource.name == resource_name), None)
         if resource is None:
-            raise ValueError(f"Resource '{resource_name}' not found")
+            raise ValueError(f"Resource not found: {resource}")
         return resource
 
     @staticmethod
     def get_view_create(resource: "Resource") -> "CreateView":
         if (view := resource.views.create) is None:
-            raise ValueError(f"Resource '{resource.name}' has no create view configured")
+            raise ValueError(f"Create view for Resource not found: {resource}")
         return view
 
     @staticmethod
     def get_view_detail(resource: "Resource") -> "DetailView":
         if (view := resource.views.detail) is None:
-            raise ValueError(f"Resource '{resource.name}' has no detail view configured")
+            raise ValueError(f"Detail for Resource not found: {resource}")
         return view
 
     @staticmethod
     def get_view_list(resource: "Resource") -> "ListView":
         if (view := resource.views.list) is None:
-            raise ValueError(f"Resource '{resource.name}' has no list view configured")
+            raise ValueError(f"List for Resource not found: {resource}")
         return view
 
 
@@ -408,6 +411,12 @@ class AdminTable(ListViewMixin, _HasConfig):
                 handler=self.resource_action_call_handler,
             ),
             AdminTableRoute(
+                path="/resource/{resource}/detail/{detail_id}/graph/{graph_ref}",
+                method="GET",
+                name="resource_graph",
+                handler=self.resource_graph_handler,
+            ),
+            AdminTableRoute(
                 path="/page/{page_name}/view",
                 method="GET",
                 name="page_view",
@@ -578,10 +587,19 @@ class AdminTable(ListViewMixin, _HasConfig):
 
         entry = resource.resolver.resolve_detail(resource, request.path_params["detail_id"])
 
+        if entry is None:
+            return AdminTableRoute.RouteResponse(
+                status_code=404,
+                body={"message": f"Resource not found: {request.path_params['detail_id']}"},
+                content_type="application/json",
+            )
+
         fields = [(field.head(), field.value(entry)) for field in field_resolver(detail.fields)]
 
         title_template = string.Template(detail.title or resource.display or resource.name)
         title = title_template.safe_substitute(entry)
+
+        description = detail.description(entry) if callable(detail.description) else detail.description
 
         def get_param(attr: str, param: Parameter) -> dict[str, Any]:
             type_map = {int: "int", str: "str", Parameter.empty: "str", bool: "bool"}
@@ -636,12 +654,81 @@ class AdminTable(ListViewMixin, _HasConfig):
                 }
             )
 
+        graphs = []
+        for graph in detail.graphs:
+            ref = graph.__name__
+            display = graph.__name__.replace("_", " ").title()
+            graphs.append(
+                {
+                    "title": display,
+                    "description": graph.__doc__ or "",
+                    "reference": ref,
+                }
+            )
+
         return AdminTableRoute.RouteResponse(
             body={
                 "title": title,
+                "description": description,
                 "fields": fields,
                 "actions": actions,
                 "tables": tables,
+                "graphs": graphs,
+            },
+            content_type="application/json",
+        )
+
+    def resource_graph_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+        resource = self.get_resource(request.path_params["resource"])
+        detail = self.get_view_detail(resource)
+        data_function: GetGraphCallback | None = next(
+            (g for g in detail.graphs if g.__name__ == request.path_params["graph_ref"]), None
+        )
+
+        if data_function is None:
+            return AdminTableRoute.RouteResponse(
+                status_code=404,
+                body={"message": f"Graph {request.path_params['graph_ref']} not found"},
+                content_type="application/json",
+            )
+        entry = resource.resolver.resolve_detail(resource, request.path_params["detail_id"])
+
+        if entry is None:
+            return AdminTableRoute.RouteResponse(
+                status_code=404,
+                body={"message": f"Resource not found: {request.path_params['detail_id']}"},
+                content_type="application/json",
+            )
+
+        if (range_type := request.query_params.get("range_type", "date")) == "date":
+            q_range_from = request.query_params.get("range_from", None)
+            q_range_to = request.query_params.get("range_to", None)
+
+            range_from = datetime.datetime.fromisoformat(q_range_from) if q_range_from else None
+            range_to = datetime.datetime.fromisoformat(q_range_to) if q_range_to else None
+        elif range_type is not None:
+            return AdminTableRoute.RouteResponse(
+                status_code=400,
+                body={"message": f"Invalid range type: {range_type}"},
+                content_type="application/json",
+            )
+        else:
+            range_from = range_to = None
+
+        try:
+            graph_data: GraphData = data_function(entry, range_from=range_from, range_to=range_to)
+        except Exception as e:
+            logging.exception("Failed getting graph data")
+            return AdminTableRoute.RouteResponse(
+                status_code=500,
+                body={"message": f"Internal server error: {e}"},
+                content_type="application/json",
+            )
+
+        return AdminTableRoute.RouteResponse(
+            body={
+                "type": graph_data.chart_type,
+                "config": {k: v for k, v in dataclasses.asdict(graph_data).items() if v is not None},
             },
             content_type="application/json",
         )
@@ -659,6 +746,12 @@ class AdminTable(ListViewMixin, _HasConfig):
                 content_type="application/json",
             )
         entry = resource.resolver.resolve_detail(resource, request.path_params["detail_id"])
+        if entry is None:
+            return AdminTableRoute.RouteResponse(
+                status_code=404,
+                body={"message": f"Resource not found: {request.path_params['detail_id']}"},
+                content_type="application/json",
+            )
 
         # TODO build params
         raw_params = request.body["params"]
