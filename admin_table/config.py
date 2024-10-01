@@ -49,6 +49,8 @@ class DefaultAuthProvider:
 @dataclasses.dataclass
 class AdminTableConfig:
     name: Annotated[str, Doc("The name of the AdminTable")] = "AdminTable"
+    icon_src: Annotated[str | None, Doc("Icon to be displayed in the navigation drawer")] = None
+    version: Annotated[str | None, Doc("Current version of your application")] = None
     auth_provider: DefaultAuthProvider = dataclasses.field(default_factory=DefaultAuthProvider)
     dashboard: Annotated[
         Callable[[DefaultAuthProvider.User], str], Doc("Function generating the dashboard content")

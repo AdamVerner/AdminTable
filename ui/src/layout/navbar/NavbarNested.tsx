@@ -4,12 +4,12 @@ import { UserButton } from './UserButton';
 import classes from './NavbarNested.module.css';
 
 interface NavbarNestedProps {
-  navigationLinks: LinksGroupProps[];
+  navigation: LinksGroupProps[];
 }
 
-export const NavbarNested = ({ navigationLinks }: NavbarNestedProps) => {
-  const links = navigationLinks.map((link) => (
-    <LinksGroup name={link.name} children={link.children} key={link.name} />
+export const NavbarNested = ({ navigation }: NavbarNestedProps) => {
+  const links = navigation.map((nav) => (
+    <LinksGroup name={nav.name} links={nav.links} key={nav.name} />
   ));
 
   return (

@@ -1,3 +1,5 @@
+import base64
+import os.path
 import random
 from datetime import datetime, timedelta
 from typing import Annotated, Optional
@@ -80,9 +82,13 @@ def random_graph_data(
     )
 
 
+icon_data = open(os.path.join(os.path.dirname(__file__), "icon.png"), "rb").read()
+icon_src = f"data:{'image/png'};base64,{base64.b64encode(icon_data).decode()}"
 config = AdminTableConfig(
-    name="Simple TableAPI example",
+    name="Simple Admin Table example",
     dashboard=lambda u: f"# Dashboard\n\nWelcome {u.email} to Simple Example of TableAPI",
+    icon_src=icon_src,
+    version="dev",
     resources=[
         Resource(
             navigation="Users",

@@ -479,10 +479,12 @@ class AdminTable(ListViewMixin, _HasConfig):
         return AdminTableRoute.RouteResponse(
             body={
                 "name": self.config.name,
-                "links": [
+                "icon_src": self.config.icon_src,
+                "version": self.config.version,
+                "navigation": [
                     {
                         "name": drawer,
-                        "children": [
+                        "links": [
                             {
                                 "name": resource.name,
                                 "display": resource.display or resource.name,

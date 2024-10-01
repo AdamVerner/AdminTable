@@ -53,7 +53,7 @@ export default function SubGraph({ detail, graph }: SubGraphProps) {
       chart = <AreaChart h={300} {...data.config} />;
       break;
     default:
-      <Text c='red'>Invalid chart type: {data.type}</Text>;
+      <Text c="red">Invalid chart type: {data.type}</Text>;
   }
   return (
     <>

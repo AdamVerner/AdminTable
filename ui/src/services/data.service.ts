@@ -96,9 +96,11 @@ class DataService {
 
   async getNavigation(): Promise<{
     name: string;
-    links: Array<{
+    icon_src: string | null;
+    version: string | null;
+    navigation: Array<{
       name: string;
-      children: {
+      links: {
         name: string;
         display: string;
         type: 'resource' | 'page';

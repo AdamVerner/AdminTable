@@ -34,12 +34,12 @@ export function ChildLink(child: ChildLinkProps) {
 
 export interface LinksGroupProps {
   name: string;
-  children: ChildLinkProps[];
+  links: ChildLinkProps[];
 }
-export function LinksGroup({ name, children }: LinksGroupProps) {
+export function LinksGroup({ name, links }: LinksGroupProps) {
   const Icon = IconLock;
   const [opened, setOpened] = useState(false);
-  const items = children.map((child) => <ChildLink {...child} key={child.name} />);
+  const items = links.map((link) => <ChildLink {...link} key={link.name} />);
 
   return (
     <>
