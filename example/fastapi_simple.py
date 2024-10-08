@@ -27,6 +27,7 @@ from admin_table.config import (
     Page,
     SubTable,
 )
+from admin_table.modules.bases.list_resolver import ResolverBase
 from admin_table.modules.sqlalchemy import SQLAlchemyResolver
 from admin_table.wrappers import FastAPIWrapper
 
@@ -164,6 +165,30 @@ config = AdminTableConfig(
                     fields=[
                         "id",
                         Item.title,
+                        ("Is Public", Item.public),
+                        ("Description", Item.description),
+                        ("Owner", LinkDetail("owner_email", "User", "owner_id")),
+                    ],
+                ),
+            ),
+        ),
+        Resource(
+            navigation="Users",
+            name="Public Items",
+            resolver=SQLAlchemyResolver(
+                SessionLocal,
+                Item,
+                extra_cols={
+                    "owner_email": Query(User.email).filter(User.id == Item.owner_id),
+                },
+            ),
+            views=ResourceViews(
+                list=ListView(
+                    hidden_filters=[ResolverBase.AppliedFilter("public", "eq", "true")],
+                    fields=[
+                        "id",
+                        Item.title,
+                        ("Is Public", Item.public),
                         ("Description", Item.description),
                         ("Owner", LinkDetail("owner_email", "User", "owner_id")),
                     ],
@@ -194,7 +219,12 @@ with SessionLocal() as session:
     session.add(u2 := User(email=f"{random.randint(10, 10**10)}@email.local"))
     session.flush()
     session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u1.id))
-    session.add(Item(title=f"other item {random.randint(10, 10**10)}", owner_id=u2.id))
+    session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u1.id, public=False))
+    session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u1.id, public=False))
+    session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u2.id))
+    session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u2.id))
+    session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u2.id))
+    session.add(Item(title=f"other item {random.randint(10, 10**10)}", owner_id=u2.id, public=False))
     session.commit()
 
 at = AdminTable(config=config)

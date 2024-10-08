@@ -23,5 +23,6 @@ class Item(Base):
     title = Column(String, index=True)
     description = Column(String, index=True)
     owner_id = Column(Uuid, ForeignKey("users.id"))
+    public = Column(Boolean, default=True)
 
     owner = relationship("User", back_populates="items")

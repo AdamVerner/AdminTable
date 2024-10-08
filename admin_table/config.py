@@ -165,6 +165,13 @@ class ListView(ViewBase):
     fields: Annotated[list[ListViewFieldType], Doc("List of fields to be selected from the model")]
     detail_value_ref: Annotated[Optional[str], Doc("Column to be used as the detail value")] = None
 
+    hidden_filters: Annotated[
+        Optional[list["ResolverBase.AppliedFilter"]],
+        Doc(
+            "Always-on set of filter which will NOT be displayed to the user."
+            "These filters are not passed to the filter_processor and are applied directly to the query."
+        ),
+    ] = None
     filter_processor: Annotated[
         Optional[Callable[["ResolverBase.AppliedFilter"], "ResolverBase.AppliedFilter"]],
         Doc("Function processing the filter before passing it to the resolver"),

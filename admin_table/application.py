@@ -17,11 +17,11 @@ from .config import (
     DefaultAuthProvider,
     DetailView,
     GetGraphCallback,
+    GraphData,
     LinkDetail,
     LinkTable,
     ListView,
     Resource,
-    GraphData,
 )
 from .modules.bases.list_resolver import ResolverBase
 
@@ -299,7 +299,7 @@ class ListViewMixin(AuthRouteMixin, _HasConfig):
             resource,
             current_page,
             current_per_page,
-            current_filters,
+            current_filters + (view.hidden_filters or []),
             cast(Tuple[str, Literal["asc", "desc"]], current_sort),
         )
 
