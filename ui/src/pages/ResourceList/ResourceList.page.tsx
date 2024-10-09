@@ -10,7 +10,7 @@ import dataService, { useGetData } from '@/services/data.service';
 import FilterSelection from './FilterSelection';
 
 export default () => {
-  const { state: SearchState, setPerPage, setPage } = useTableParams();
+  const { state: SearchState, setPerPage, setPage, setSort } = useTableParams();
   const { resourceName } = useParams();
 
   const [data, isLoading, failed] = useGetData(async () => {
@@ -51,8 +51,8 @@ export default () => {
         available_filters={data.available_filters}
       />
       <Table striped>
-        <TableHead header={data.header} />
-        <TableBody rows={data.data} />
+        <TableHead header={data.header} setSort={setSort} />
+        <TableBody header={data.header} rows={data.data} />
       </Table>
       <PageSelect
         page={data.pagination.page}

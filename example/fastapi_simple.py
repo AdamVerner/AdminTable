@@ -27,8 +27,8 @@ from admin_table.config import (
     Page,
     SubTable,
 )
-from admin_table.modules.bases.list_resolver import ResolverBase
-from admin_table.modules.sqlalchemy import SQLAlchemyResolver
+from admin_table.modules import SQLAlchemyResolver
+from admin_table.modules.bases import ResolverBase
 from admin_table.wrappers import FastAPIWrapper
 
 
@@ -111,6 +111,11 @@ config = AdminTableConfig(
                         ("Active", "Active Filed description information", User.is_active),
                         ("Items", "item_count"),
                         ("Items Link", LinkTable("item_count", "Items", "owner_id", "eq", "id")),
+                        (
+                            "[[json]]JSON Field",
+                            "This field will show formated JSON data",
+                            lambda d: '{"key": "value", "key2": "value2", "sub": {"key": "value"}}',
+                        ),
                     ],
                 ),
                 detail=DetailView(
@@ -128,14 +133,19 @@ config = AdminTableConfig(
                             lambda d: (f"Custom field with email: {d.get('email', '')}" * 10 + "\n") * 20,
                         ),
                         (
-                            "HTML Field",
+                            "[[html]]HTML Field",
                             "This filed will open popup with rendered html content",
-                            lambda d: f'[[html]]<h2>Title</h2><ul>{'\n'.join(f'<li> Item {x}</li>' for x in range(10))}</ul>',
+                            lambda d: f'<h2>Title</h2><ul>{'\n'.join(f'<li> Item {x}</li>' for x in range(10))}</ul>',
                         ),
                         (
-                            "Markdown Field",
+                            "[[markdown]]Markdown Field",
                             "This filed will open popup with rendered html content",
-                            lambda d: f'[[markdown]]## Custom Markdown Field\n\n {'\n'.join(f' - Item: {x}' for x in range(10))}',
+                            lambda d: f'## Custom Markdown Field\n\n {'\n'.join(f' - Item: {x}' for x in range(10))}',
+                        ),
+                        (
+                            "[[json]]JSON Field",
+                            "This field will show formated JSON data",
+                            lambda d: '{"key": "value", "key2": "value2", "sub": {"key": "value"}}',
                         ),
                     ],
                     actions=[custom_user_action, another_action, hello],
@@ -225,6 +235,8 @@ with SessionLocal() as session:
     session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u2.id))
     session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u2.id))
     session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u2.id))
+    session.add(Item(title=f"item {random.randint(10, 10**10)}"))
+    session.add(Item(title=f"item {random.randint(10, 10**10)}"))
     session.add(Item(title=f"other item {random.randint(10, 10**10)}", owner_id=u2.id, public=False))
     session.commit()
 

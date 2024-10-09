@@ -8,9 +8,12 @@ interface NavbarNestedProps {
 }
 
 export const NavbarNested = ({ navigation }: NavbarNestedProps) => {
-  const links = navigation.map((nav) => (
-    <LinksGroup name={nav.name} links={nav.links} key={nav.name} />
-  ));
+  const links = navigation.map((nav) => {
+    if (nav.links.length === 0) {
+      return null;
+    }
+    return <LinksGroup name={nav.name} links={nav.links} key={nav.name} />;
+  });
 
   return (
     <nav className={classes.navbar}>

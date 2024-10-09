@@ -22,7 +22,7 @@ class Item(Base):
     id = Column(Integer, primary_key=True)
     title = Column(String, index=True)
     description = Column(String, index=True)
-    owner_id = Column(Uuid, ForeignKey("users.id"))
+    owner_id = Column(Uuid, ForeignKey("users.id"), nullable=True)
     public = Column(Boolean, default=True)
 
     owner = relationship("User", back_populates="items")

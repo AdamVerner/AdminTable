@@ -23,7 +23,7 @@ from .config import (
     ListView,
     Resource,
 )
-from .modules.bases.list_resolver import ResolverBase
+from .modules.bases import ResolverBase
 
 
 @dataclasses.dataclass
@@ -233,7 +233,7 @@ def field_resolver(fields):
                     )
                 )
             case [display, handler] if callable(handler):
-                yield _ComputedColumn(handler, display=display, sortable=False)
+                yield _ComputedColumn(handler, ref=None, display=display, sortable=False)
 
             # same cases, but now with description
             # I did not come up with a better way to do this unfortunately

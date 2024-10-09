@@ -26,6 +26,12 @@ const safeParse = (str: string | null): SearchState => {
     if (typeof tmp.perPage !== 'number') {
       tmp.perPage = DEFAULT_STATE.perPage;
     }
+    if (tmp.sort && typeof tmp.sort.ref !== 'string') {
+      tmp.sort = DEFAULT_STATE.sort;
+    }
+    if (tmp.sort && !['asc', 'desc'].includes(tmp.sort.dir)) {
+      tmp.sort = DEFAULT_STATE.sort;
+    }
     if (!Array.isArray(tmp.filters)) {
       tmp.filters = DEFAULT_STATE.filters;
     }

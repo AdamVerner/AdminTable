@@ -13,6 +13,8 @@ export const operators = {
   in: 'in',
   like: 'like',
   ilike: 'ilike',
+  is_null: 'is null',
+  is_not_null: 'is not null',
 };
 
 interface AddFilterProps {
@@ -45,7 +47,9 @@ function AddFilter({ available_filters, applied_filters, setFilters }: AddFilter
         style={{ width: '8ch' }}
         data={Object.entries(operators).map(([k, v]) => ({ value: k, label: v }))}
       />
-      <Input placeholder="value" {...form.getInputProps('val')} />
+      {form.getValues().op === 'is_null' || form.getValues().op === 'is_not_null' ? null : (
+        <Input placeholder="value" {...form.getInputProps('val')} />
+      )}
       <Button onClick={onAddFilter}>Add Filter</Button>
     </Group>
   );

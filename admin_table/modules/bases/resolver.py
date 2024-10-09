@@ -16,7 +16,7 @@ class ResolverBase(abc.ABC):
         ref: str
         op: str
         val: str
-        display: str = None
+        display: str | None = None
 
     @dataclasses.dataclass
     class ResolvedListData:

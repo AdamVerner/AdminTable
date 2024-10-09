@@ -1,6 +1,7 @@
 import React from 'react';
-import { Grid, Tooltip } from '@mantine/core';
+import { Grid } from '@mantine/core';
 import DataField, { DataFieldProps } from '@/components/DataField';
+import FieldTitle from '@/components/FieldTitle';
 
 export const Field = ({
   head,
@@ -17,13 +18,9 @@ export const Field = ({
   return (
     <div>
       <Grid>
-        {head.description ? (
-          <Tooltip label={head.description}>
-            <Grid.Col span={4}>{head.display}:</Grid.Col>
-          </Tooltip>
-        ) : (
-          <Grid.Col span={4}>{head.display}:</Grid.Col>
-        )}
+        <Grid.Col span={4}>
+          <FieldTitle display={head.display} description={head.description} />
+        </Grid.Col>
         <Grid.Col span="auto">
           <i>
             <DataField title={head.display} cell={field} />

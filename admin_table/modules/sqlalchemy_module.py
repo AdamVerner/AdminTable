@@ -1,6 +1,6 @@
 import ast
 import dataclasses
-from typing import Any, Callable, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Callable, Generator, List, Literal, Optional, Tuple, Type, Union
 
 import sqlalchemy.exc
 from sqlalchemy import BinaryExpression, ColumnElement, select
@@ -17,7 +17,7 @@ from sqlalchemy.sql.functions import count
 from typing_extensions import Annotated, Doc
 
 from admin_table.config import Resource
-from admin_table.modules.bases.list_resolver import ResolvedData, ResolverBase
+from admin_table.modules.bases import ResolvedData, ResolverBase
 
 SQLAlchemyListView_FieldType = Union[str, InstrumentedAttribute, Query, ColumnElement]
 
@@ -72,9 +72,17 @@ class SQLAlchemyResolver(ResolverBase):
     @staticmethod
     def __generate_filter_expression(
         attributes: dict[str, __ListColumns], filters: List[ResolverBase.AppliedFilter]
-    ) -> List[BinaryExpression]:
+    ) -> Generator[BinaryExpression, None, None]:
         for f in filters:
-            sql_column = attributes.get(f.ref).src
+            sql_column = attributes[f.ref].src
+
+            if f.op == "is_null":
+                yield sql_column.is_(None)
+                continue
+
+            if f.op == "is_not_null":
+                yield sql_column.isnot(None)
+                continue
 
             # convert value to the correct type
             if f.op == "in":
@@ -115,13 +123,13 @@ class SQLAlchemyResolver(ResolverBase):
 
         # execute queries
         with self.session_maker() as session:
-            total = session.execute(select(count()).select_from(base_select)).scalar()
+            total = session.execute(select(count()).select_from(base_select.subquery())).scalar()
             rows = session.execute(list_select).fetchall()
 
         # parse data into a dictionary
         return self.ResolvedListData(
             list_data=[{key: value for value, key in zip(row, attributes.keys())} for row in rows],
-            pagination={"page": page, "per_page": per_page, "total": total},
+            pagination={"page": page, "per_page": per_page, "total": total or 0},
         )
 
     def resolve_detail(self, resource: "Resource", entry_id: str) -> ResolvedData | None:
@@ -131,7 +139,7 @@ class SQLAlchemyResolver(ResolverBase):
         col_src: InstrumentedAttribute = attributes[resource.id_col].src
         casted_id = col_src.type.python_type(entry_id)
 
-        base_select = select(*[col.src for col in attributes.values()]).filter(casted_id == col_src)
+        base_select = select(*[col.src for col in attributes.values()]).filter(col_src == casted_id)
 
         with self.session_maker() as session:
             try:
@@ -141,15 +149,14 @@ class SQLAlchemyResolver(ResolverBase):
 
         obj = {key: value for value, key in zip(entry, attributes.keys())}
 
-        self.model.__getitem__ = lambda self, item: obj[item]
-        self.model.get = lambda self, *args, **kwargs: obj.get(*args, **kwargs)
+        self.model.__getitem__ = lambda s, item: obj[item]
+        self.model.get = lambda s, *args, **kwargs: obj.get(*args, **kwargs)
 
         entity = self.model(**{k: v for k, v in obj.items() if k in dir(self.model)})
         make_transient_to_detached(entity)
         # entity = session.merge(entity, load=False)
 
-        # noinspection PyTypeChecker
-        return entity
+        return entity  # type: ignore
 
     def get_filter_options(self, resource: "Resource") -> dict[str, ResolverBase.FilterOption]:
         all_columns = self.__resolve_model_attributes(resource)

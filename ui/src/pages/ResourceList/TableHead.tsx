@@ -1,6 +1,6 @@
 import { IconArrowDown, IconArrowsUpDown, IconArrowUp } from '@tabler/icons-react';
-import { Group, Table, Tooltip } from '@mantine/core';
-import { useTableParams } from '@/pages/ResourceList/utils';
+import { Table } from '@mantine/core';
+import FieldTitle from '@/components/FieldTitle';
 
 interface TableHeadProps {
   header: {
@@ -10,6 +10,7 @@ interface TableHeadProps {
     sort: 'asc' | 'desc' | null;
     description: string;
   }[];
+  setSort: (sort: { ref: string; dir: 'asc' | 'desc' }) => void;
 }
 
 const DirectionArrow = (props: {
@@ -47,27 +48,18 @@ const DirectionArrow = (props: {
   }
 };
 
-export default ({ header }: TableHeadProps) => {
-  const { setSort } = useTableParams();
+export default ({ header, setSort }: TableHeadProps) => {
   return (
     <>
       <Table.Thead>
         <Table.Tr>
           {header.map((col, i) => (
             <Table.Th key={i}>
-              <Group>
-                {col.description ? (
-                  <Tooltip label={col.description}>
-                    <span>{col.display}</span>
-                  </Tooltip>
-                ) : (
-                  <span>{col.display}</span>
-                )}
-
+              <FieldTitle display={col.display} description={col.description}>
                 {col.sortable && (
                   <DirectionArrow c_ref={col.ref} current_sort={col.sort} setSort={setSort} />
                 )}
-              </Group>
+              </FieldTitle>
             </Table.Th>
           ))}
         </Table.Tr>
