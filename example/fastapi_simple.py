@@ -104,10 +104,11 @@ config = AdminTableConfig(
             ),
             views=ResourceViews(
                 list=ListView(
+                    default_sort=("email", "desc"),
                     fields=[
                         # "id", id added automatically, because detail view is enabled
                         "email",
-                        ("Active", User.is_active),
+                        ("Active", "Active Filed description information", User.is_active),
                         ("Items", "item_count"),
                         ("Items Link", LinkTable("item_count", "Items", "owner_id", "eq", "id")),
                     ],

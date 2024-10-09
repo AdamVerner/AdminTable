@@ -165,6 +165,14 @@ class ListView(ViewBase):
     fields: Annotated[list[ListViewFieldType], Doc("List of fields to be selected from the model")]
     detail_value_ref: Annotated[Optional[str], Doc("Column to be used as the detail value")] = None
 
+    default_sort: Annotated[
+        Tuple[str, str],
+        Doc(
+            "Default sorting column and direction. Column name is used to resolve the column from the model."
+            "Direction is either 'asc' or 'desc', if no value is provided, the detail ref is used as default."
+        ),
+    ] = (None, "asc")
+
     hidden_filters: Annotated[
         Optional[list["ResolverBase.AppliedFilter"]],
         Doc(

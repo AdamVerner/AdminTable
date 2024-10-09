@@ -1,6 +1,6 @@
 import { Outlet, useNavigate } from 'react-router-dom';
 import { AppShell, Burger, Center, Code, Group, Loader, Text } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
+import { useDisclosure, useDocumentTitle } from '@mantine/hooks';
 import ColorSchemeToggle from '@/components/ColorSchemeToggle/ColorSchemeToggle';
 import { Logo } from '@/components/Logo';
 import { NavbarNested } from '@/layout/navbar/NavbarNested';
@@ -15,6 +15,8 @@ export const Layout = () => {
   );
 
   const goHome = () => navigate('/');
+
+  useDocumentTitle(navigation?.name || '');
 
   if (navigationLoading || !navigation) {
     return (

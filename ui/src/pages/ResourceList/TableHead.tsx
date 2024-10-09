@@ -3,12 +3,18 @@ import { Group, Table, Tooltip } from '@mantine/core';
 import { useTableParams } from '@/pages/ResourceList/utils';
 
 interface TableHeadProps {
-  header: { ref: string; display: string; sortable: boolean; description: string }[];
+  header: {
+    ref: string;
+    display: string;
+    sortable: boolean;
+    sort: 'asc' | 'desc' | null;
+    description: string;
+  }[];
 }
 
 const DirectionArrow = (props: {
   c_ref: string;
-  current_sort: { ref: string; dir: string } | undefined;
+  current_sort: 'asc' | 'desc' | null;
   setSort: (sort: { ref: string; dir: 'asc' | 'desc' }) => void;
 }) => {
   const defaultProps = {
@@ -16,33 +22,33 @@ const DirectionArrow = (props: {
     style: { cursor: 'pointer' },
     size: '1rem',
   };
-  if (props.current_sort?.ref === props.c_ref) {
-    if (props.current_sort?.dir === 'asc') {
+  switch (props.current_sort) {
+    case 'asc':
       return (
         <IconArrowUp
           {...defaultProps}
           onClick={() => props.setSort({ ref: props.c_ref, dir: 'desc' })}
         />
       );
-    } else if (props.current_sort?.dir === 'desc') {
+    case 'desc':
       return (
         <IconArrowDown
           {...defaultProps}
           onClick={() => props.setSort({ ref: props.c_ref, dir: 'asc' })}
         />
       );
-    }
+    default:
+      return (
+        <IconArrowsUpDown
+          {...defaultProps}
+          onClick={() => props.setSort({ ref: props.c_ref, dir: 'asc' })}
+        />
+      );
   }
-  return (
-    <IconArrowsUpDown
-      {...defaultProps}
-      onClick={() => props.setSort({ ref: props.c_ref, dir: 'asc' })}
-    />
-  );
 };
 
 export default ({ header }: TableHeadProps) => {
-  const { state: SearchState, setSort } = useTableParams();
+  const { setSort } = useTableParams();
   return (
     <>
       <Table.Thead>
@@ -59,11 +65,7 @@ export default ({ header }: TableHeadProps) => {
                 )}
 
                 {col.sortable && (
-                  <DirectionArrow
-                    c_ref={col.ref}
-                    current_sort={SearchState.sort}
-                    setSort={setSort}
-                  />
+                  <DirectionArrow c_ref={col.ref} current_sort={col.sort} setSort={setSort} />
                 )}
               </Group>
             </Table.Th>

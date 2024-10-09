@@ -134,8 +134,17 @@ class _Column:
     def value(self, row):
         return row[self.ref]
 
-    def head(self):
-        return {"ref": self.ref, "display": self.display, "sortable": self.sortable, "description": self.description}
+    def head(self, current_sort: Tuple[str, Literal["asc", "desc"]] | None = None):
+        sort = None
+        if current_sort:
+            sort = current_sort[1] if current_sort[0] == self.ref else None
+        return {
+            "ref": self.ref,
+            "display": self.display,
+            "sortable": self.sortable,
+            "sort": sort,
+            "description": self.description,
+        }
 
 
 class _LinkDetailColumn(_Column):
@@ -265,7 +274,11 @@ class ListViewMixin(AuthRouteMixin, _HasConfig):
         current_page = int(request.query_params.get("page", 1) or 1)
         current_per_page = int(request.query_params.get("per_page", 50) or 50)
         raw_filters: List[Any] = [x.split(";") for x in request.query_params.getlist("filter")]
-        current_sort = (request.query_params.get("sort", df := f"{resource.id_col};desc") or df).split(";")
+        default_sort = f"{view.default_sort[0] or resource.id_col};{view.default_sort[1]}"
+        current_sort = cast(
+            Tuple[str, Literal["asc", "desc"]],
+            (request.query_params.get("sort", default_sort) or default_sort).split(";"),
+        )
 
         # ##### GENERATE DATA USING RESOLVER
         title = view.title or resource.display or resource.name
@@ -300,7 +313,7 @@ class ListViewMixin(AuthRouteMixin, _HasConfig):
             current_page,
             current_per_page,
             current_filters + (view.hidden_filters or []),
-            cast(Tuple[str, Literal["asc", "desc"]], current_sort),
+            current_sort,
         )
 
         # ##### PROCESS DATA INTO COLUMN FORMAT
@@ -310,7 +323,7 @@ class ListViewMixin(AuthRouteMixin, _HasConfig):
 
         body = {
             "data": rows,
-            "header": [h.head() for h in header],
+            "header": [h.head(current_sort) for h in header],
             "meta": {
                 "title": title,
                 "description": description,
@@ -596,7 +609,7 @@ class AdminTable(ListViewMixin, _HasConfig):
                 content_type="application/json",
             )
 
-        fields = [(field.head(), field.value(entry)) for field in field_resolver(detail.fields)]
+        fields = [(field.head(None), field.value(entry)) for field in field_resolver(detail.fields)]
 
         title_template = string.Template(detail.title or resource.display or resource.name)
         title = title_template.safe_substitute(entry)

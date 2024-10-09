@@ -53,6 +53,7 @@ type DataHead = {
   ref: string;
   display: string;
   sortable: boolean;
+  sort: 'asc' | 'desc' | null;
   description: string;
 };
 
