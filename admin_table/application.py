@@ -497,6 +497,7 @@ class AdminTable(ListViewMixin, _HasConfig):
                 "navigation": [
                     {
                         "name": drawer,
+                        "icon": self.config.navigation_icons.get(drawer, "x"),
                         "links": [
                             {
                                 "name": resource.name,
@@ -741,10 +742,7 @@ class AdminTable(ListViewMixin, _HasConfig):
             )
 
         return AdminTableRoute.RouteResponse(
-            body={
-                "type": graph_data.chart_type,
-                "config": {k: v for k, v in dataclasses.asdict(graph_data).items() if v is not None},
-            },
+            body=graph_data.to_dict(),
             content_type="application/json",
         )
 

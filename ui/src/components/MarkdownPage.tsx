@@ -1,8 +1,8 @@
 import React from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { LineChart } from '@mantine/charts';
-import { TypographyStylesProvider } from '@mantine/core';
+import { Text, TypographyStylesProvider } from '@mantine/core';
+import UserChart from '@/components/UserChart';
 
 export const MarkdownPage = ({ content }: { content: string }) => {
   const code = ({
@@ -15,14 +15,13 @@ export const MarkdownPage = ({ content }: { content: string }) => {
     className?: string;
     children?: React.ReactNode;
   }): React.ReactElement => {
-    if (className === 'language-recharts') {
-      const data = JSON.parse(children?.toString() ?? '');
-      return (
-        <div className="w-100">
-          <h3>{data?.title ?? ''}</h3>
-          <LineChart data={data.data} {...data} redraw />
-        </div>
-      );
+    if (className === 'language-chart') {
+      try {
+        const data = JSON.parse(children?.toString() ?? '');
+        return <UserChart {...data} />;
+      } catch (e: any) {
+        return <Text c="red">Error rendering chart: {e?.message}</Text>;
+      }
     }
     if (className === 'language-leaflet') {
       const data = JSON.parse(children?.toString() ?? '');
@@ -55,12 +54,10 @@ export const MarkdownPage = ({ content }: { content: string }) => {
     className?: string;
     children?: React.ReactNode;
   }): React.ReactElement => {
-    if (((children as any)?.props?.className ?? '') === 'language-chartjs') {
-      return <div className="col col-md-6 mx-auto">{children}</div>;
+    if (((children as any)?.props?.className ?? '') === 'language-chart') {
+      return <div>{children}</div>;
     }
-    if (((children as any)?.props?.className ?? '') === 'language-leaflet') {
-      return <div className="col col-md-6 mx-auto">{children}</div>;
-    }
+
     return <pre {...props}>{children}</pre>;
   };
 
@@ -69,7 +66,6 @@ export const MarkdownPage = ({ content }: { content: string }) => {
       <Markdown
         remarkPlugins={[remarkGfm]}
         components={{
-          p: ({ node, ...rest }) => <p style={{ marginBottom: 'initial' }} {...rest} />,
           pre,
           code,
         }}

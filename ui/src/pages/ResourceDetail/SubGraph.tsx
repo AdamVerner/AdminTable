@@ -1,6 +1,6 @@
 import React from 'react';
-import { AreaChart, BarChart, LineChart } from '@mantine/charts';
 import { Loader, Text, Title } from '@mantine/core';
+import UserChart from '@/components/UserChart';
 import dataService, { useGetData } from '@/services/data.service';
 
 interface SubGraphProps {
@@ -41,25 +41,11 @@ export default function SubGraph({ detail, graph }: SubGraphProps) {
 
   const title = data.config?.title ?? graph.title;
   const description = data.config?.description ?? graph.description;
-  let chart;
-  switch (data.type) {
-    case 'line':
-      chart = <LineChart h={300} {...data.config} />;
-      break;
-    case 'bar':
-      chart = <BarChart h={300} {...data.config} />;
-      break;
-    case 'area':
-      chart = <AreaChart h={300} {...data.config} />;
-      break;
-    default:
-      <Text c="red">Invalid chart type: {data.type}</Text>;
-  }
   return (
     <>
       <Title order={3}>{title}</Title>
       {description && <Text>{description}</Text>}
-      {chart}
+      <UserChart {...data} />
     </>
   );
 }

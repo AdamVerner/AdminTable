@@ -1,4 +1,5 @@
 import base64
+import json
 import os.path
 import random
 from datetime import datetime, timedelta
@@ -50,7 +51,7 @@ def another_action(user: User, bool_param: bool) -> str:
     return f"performed action on {user} {bool_param}"
 
 
-def hello(user: User, b1: bool, b2: bool, string1: str, string2: str, strin3: str) -> str:
+def hello(user: User, b1: bool, b2: bool, string1: str, string2: str, string3: str) -> str:
     """
     Performs various actions on the user :wink:
     Try to pass "hello" into the `string_param` and see what happens
@@ -83,6 +84,29 @@ def random_graph_data(
     )
 
 
+def generate_item_list_description() -> str:
+    return (
+        '## Some really cool graph\n'
+        "```chart\n"
+        f"{json.dumps(LineGraphData(
+        data=[
+            {
+                "date": (datetime.now() + timedelta(days=x)).isoformat(),
+                "Blue param": 150 - x * 10,
+                "Red something": 50 + x * 2 + random.randint(-10, 15) * 10,
+            }
+            for x in range(100)
+        ],
+        dataKey="date",
+        series=[
+            {"name": "Blue param", "color": "indigo.6"},
+            {"name": "Red something", "color": "red.6"},
+        ],
+    ).to_dict())}\n"
+        "```\n"
+    )
+
+
 icon_data = open(os.path.join(os.path.dirname(__file__), "icon.png"), "rb").read()
 icon_src = f"data:{'image/png'};base64,{base64.b64encode(icon_data).decode()}"
 config = AdminTableConfig(
@@ -104,6 +128,7 @@ config = AdminTableConfig(
             ),
             views=ResourceViews(
                 list=ListView(
+                    description="List of all users",
                     default_sort=("email", "desc"),
                     fields=[
                         # "id", id added automatically, because detail view is enabled
@@ -195,6 +220,7 @@ config = AdminTableConfig(
             ),
             views=ResourceViews(
                 list=ListView(
+                    description=generate_item_list_description,
                     hidden_filters=[ResolverBase.AppliedFilter("public", "eq", "true")],
                     fields=[
                         "id",
@@ -220,7 +246,17 @@ config = AdminTableConfig(
             content=lambda request: "# Dashboard\n\nWelcome to the markdown page",
             type="markdown",
         ),
+        Page(
+            name="Iframe page",
+            navigation="Custom Pages",
+            content='<iframe src="https://www.google.com" style="width: 100%; height: 100%; border: none;"></iframe>',
+            type="html",
+        ),
     ],
+    navigation_icons={
+        "Users": "user",
+        "Custom Pages": "book",
+    },
 )
 
 Base.metadata.create_all(bind=engine)

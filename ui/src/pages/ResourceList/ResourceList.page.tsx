@@ -1,7 +1,7 @@
 import React from 'react';
-import Markdown from 'react-markdown';
 import { Link, useParams } from 'react-router-dom';
-import { Button, Center, Group, Loader, Table, TypographyStylesProvider } from '@mantine/core';
+import { Button, Center, Group, Loader, Table, Title } from '@mantine/core';
+import Description from '@/components/Description';
 import PageSelect from '@/pages/ResourceList/PageSelect';
 import TableBody from '@/pages/ResourceList/TableBody';
 import TableHead from '@/pages/ResourceList/TableHead';
@@ -31,9 +31,9 @@ export default () => {
   }
 
   return (
-    <div>
-      <Group>
-        <h1>{data.meta.title}</h1>
+    <div style={{ width: '100%' }}>
+      <Group mb="xs">
+        <Title order={1}>{data.meta.title}</Title>
         {data.meta.has_create && (
           <Button component={Link} to={`/resource/${resourceName}/create`}>
             Create New
@@ -41,11 +41,7 @@ export default () => {
         )}
       </Group>
 
-      {data.meta.description && (
-        <TypographyStylesProvider>
-          <Markdown>{data.meta.description}</Markdown>
-        </TypographyStylesProvider>
-      )}
+      <Description description={data.meta.description} />
       <FilterSelection
         applied_filters={data.applied_filters}
         available_filters={data.available_filters}

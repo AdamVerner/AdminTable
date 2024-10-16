@@ -2,7 +2,7 @@ import abc
 import dataclasses
 import random
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Generic, List, Optional, Protocol, Tuple, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Generic, List, Optional, Protocol, Tuple, TypeAlias, TypeVar
 
 from pydantic import BaseModel
 from sqlalchemy import Column
@@ -46,6 +46,37 @@ class DefaultAuthProvider:
         return False
 
 
+# copied directly from source of UI library
+# additional icons have to be added manually
+NavigationIcon: TypeAlias = Literal[
+    "lock",
+    "user",
+    "home",
+    "settings",
+    "search",
+    "bell",
+    "heart",
+    "star",
+    "message",
+    "calendar",
+    "check",
+    "x",
+    "server",
+    "network",
+    "database",
+    "desktop",
+    "mobile",
+    "cloud",
+    "cpu",
+    "disc",
+    "router",
+    "wifi",
+    "usb",
+    "question_mark",
+    "book",
+]
+
+
 @dataclasses.dataclass
 class AdminTableConfig:
     name: Annotated[str, Doc("The name of the AdminTable")] = "AdminTable"
@@ -57,6 +88,9 @@ class AdminTableConfig:
     ] = dataclasses.field(default=lambda u: f"# Dashboard\n\nWelcome {u.email} to AdminTable")
     resources: List["Resource"] = dataclasses.field(default_factory=list)
     pages: List["Page"] = dataclasses.field(default_factory=list)
+    navigation_icons: Annotated[
+        dict[str, NavigationIcon], Doc("Icons which should be displayed alongside the navigation links")
+    ] = dataclasses.field(default_factory=dict)
 
 
 @dataclasses.dataclass
@@ -215,6 +249,13 @@ class SubTable:
 @dataclasses.dataclass
 class GraphData(abc.ABC):
     chart_type: str
+
+    def to_dict(self) -> dict[str, Any]:
+        # noinspection PyTypeChecker
+        return {
+            "type": self.chart_type,
+            "config": {k: v for k, v in dataclasses.asdict(self).items() if v is not None},
+        }
 
 
 @dataclasses.dataclass(kw_only=True)

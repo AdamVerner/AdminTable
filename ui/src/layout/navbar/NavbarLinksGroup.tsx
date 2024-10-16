@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { IconChevronRight, IconLock } from '@tabler/icons-react';
+import { IconChevronRight } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { Box, Collapse, Group, rem, ThemeIcon, UnstyledButton } from '@mantine/core';
+import UserDefinedIcon from '@/components/UserDefinedIcon';
 import classes from './NavbarLinksGroup.module.css';
 
 interface ChildLinkProps {
@@ -34,10 +35,10 @@ export function ChildLink(child: ChildLinkProps) {
 
 export interface LinksGroupProps {
   name: string;
+  icon: string;
   links: ChildLinkProps[];
 }
-export function LinksGroup({ name, links }: LinksGroupProps) {
-  const Icon = IconLock;
+export function LinksGroup({ name, icon, links }: LinksGroupProps) {
   const [opened, setOpened] = useState(false);
   const items = links.map((link) => <ChildLink {...link} key={link.name} />);
 
@@ -47,7 +48,7 @@ export function LinksGroup({ name, links }: LinksGroupProps) {
         <Group justify="space-between" gap={0}>
           <Box style={{ display: 'flex', alignItems: 'center' }}>
             <ThemeIcon variant="light" size={30}>
-              <Icon style={{ width: rem(18), height: rem(18) }} />
+              <UserDefinedIcon icon={icon} />
             </ThemeIcon>
             <Box ml="md">{name}</Box>
           </Box>

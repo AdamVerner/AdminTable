@@ -23,9 +23,10 @@ export default () => {
   switch (data.type) {
     case 'html':
       return (
-        <TypographyStylesProvider>
-          <div dangerouslySetInnerHTML={{ __html: data.content }} />
-        </TypographyStylesProvider>
+        <TypographyStylesProvider
+          style={{ width: '100%' }}
+          dangerouslySetInnerHTML={{ __html: data.content }}
+        />
       );
     case 'markdown':
       return <MarkdownPage content={data.content} />;

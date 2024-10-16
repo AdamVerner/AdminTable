@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Blockquote, Center, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { Center, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import Description from '@/components/Description';
 import { Action } from '@/pages/ResourceDetail/Action';
 import { Field } from '@/pages/ResourceDetail/Field';
 import SubGraph from '@/pages/ResourceDetail/SubGraph';
@@ -45,10 +46,12 @@ export default () => {
   }
 
   return (
-    <div>
-      <Title order={1}>{data.title}</Title>
-      {data.description && <Blockquote p="xs">{data.description}</Blockquote>}
-      <SimpleGrid mt="xl" ml="md" cols={{ base: 1, md: 2, lg: 3 }}>
+    <div style={{ width: '100%', overflow: 'hidden' }}>
+      <Title mb="xs" order={1}>
+        {data.title}
+      </Title>
+      <Description description={data.description} />
+      <SimpleGrid ml="md" cols={{ base: 1, md: 2, lg: 3 }}>
         {data.fields.map(([head, field], i) => (
           <Field key={i} head={head} field={field} />
         ))}

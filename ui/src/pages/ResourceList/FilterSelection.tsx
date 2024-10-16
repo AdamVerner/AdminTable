@@ -111,7 +111,7 @@ export default ({ applied_filters, available_filters }: FilterSelectionProps) =>
     setFilters,
   } = useTableParams();
   return (
-    <Stack mb="md">
+    <Stack>
       <AddFilter
         available_filters={available_filters}
         applied_filters={applied_filters}

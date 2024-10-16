@@ -3,6 +3,9 @@
 set -e
 set -x
 
+# check python code style
+ruff check
+
 # build ui
 cd ui
 yarn test

@@ -48,7 +48,7 @@ export const Layout = () => {
       <AppShell.Navbar>
         <NavbarNested navigation={navigation.navigation} />
       </AppShell.Navbar>
-      <AppShell.Main>
+      <AppShell.Main display="flex">
         <Outlet />
       </AppShell.Main>
     </AppShell>

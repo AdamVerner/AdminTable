@@ -101,6 +101,7 @@ class DataService {
     version: string | null;
     navigation: Array<{
       name: string;
+      icon: string;
       links: {
         name: string;
         display: string;

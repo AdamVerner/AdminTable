@@ -12,7 +12,7 @@ export const NavbarNested = ({ navigation }: NavbarNestedProps) => {
     if (nav.links.length === 0) {
       return null;
     }
-    return <LinksGroup name={nav.name} links={nav.links} key={nav.name} />;
+    return <LinksGroup name={nav.name} links={nav.links} key={nav.name} icon={nav.icon} />;
   });
 
   return (
