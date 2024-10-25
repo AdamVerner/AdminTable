@@ -18,9 +18,14 @@ from .config import (
     DetailView,
     GetGraphCallback,
     GraphData,
+    InputForm,
     LinkDetail,
     LinkTable,
     ListView,
+    Page,
+    RedirectDetail,
+    RedirectList,
+    RefreshView,
     Resource,
 )
 from .modules.bases import ResolverBase
@@ -94,29 +99,51 @@ class _HasConfig:
             raise ValueError(f"List for Resource not found: {resource}")
         return view
 
+    def get_input_form(self, location_name: str) -> "InputForm":
+        input_form = next((form for form in self.config.input_forms if form.location == location_name), None)
+        if input_form is None:
+            raise ValueError(f"Input Form not found: {location_name}")
+        return input_form
+
+    def get_page(self, page_name: str) -> "Page":
+        unquoted = unquote(page_name)
+
+        page = next((p for p in self.config.pages if p.name == unquoted), None)
+        if page is None:
+            raise ValueError("Page not found, invalid page name")
+        return page
+
 
 class AuthRouteMixin(_HasConfig):
+    @staticmethod
+    def check_request(
+        admin_table: "AdminTable", request: AdminTableRoute.RouteRequest
+    ) -> AdminTableRoute.RouteResponse | None:
+        if not (authorization := request.headers.get("Authorization", request.headers.get("authorization"))):
+            return AdminTableRoute.RouteResponse(
+                status_code=401,
+                body={"message": "Unauthorized"},
+                content_type="application/json",
+            )
+
+        token = authorization.removeprefix("Bearer ")
+        if not (user := admin_table.config.auth_provider.validate_token(token)):
+            return AdminTableRoute.RouteResponse(
+                status_code=401,
+                body={"message": "Unauthorized"},
+                content_type="application/json",
+            )
+
+        request.user = user
+        return None
+
     @staticmethod
     def protected(
         handler: Callable[["AdminTable", AdminTableRoute.RouteRequest], AdminTableRoute.RouteResponse],
     ) -> Callable[["AdminTable", AdminTableRoute.RouteRequest], AdminTableRoute.RouteResponse]:
         def wrapped(admin_table: "AdminTable", request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
-            if not (authorization := request.headers.get("Authorization", request.headers.get("authorization"))):
-                return AdminTableRoute.RouteResponse(
-                    status_code=401,
-                    body={"message": "Unauthorized"},
-                    content_type="application/json",
-                )
-
-            token = authorization.removeprefix("Bearer ")
-            if not (user := admin_table.config.auth_provider.validate_token(token)):
-                return AdminTableRoute.RouteResponse(
-                    status_code=401,
-                    body={"message": "Unauthorized"},
-                    content_type="application/json",
-                )
-
-            request.user = user
+            if (response := AuthRouteMixin.check_request(admin_table, request)) is not None:
+                return response
 
             result = handler(admin_table, request)
             return result
@@ -441,6 +468,18 @@ class AdminTable(ListViewMixin, _HasConfig):
                 name="get_dashboard",
                 handler=self.dashboard_handler,
             ),
+            AdminTableRoute(
+                path="/input_form/{location}",
+                method="GET",
+                name="get_input_form",
+                handler=self.get_input_form_handler,
+            ),
+            AdminTableRoute(
+                path="/input_form/{location}",
+                method="POST",
+                name="submit_input_form",
+                handler=self.submit_input_form_handler,
+            ),
             AdminTableRoute(path="/{path:path}", method="GET", name="catch_all", handler=self.default_handler),
         ]
 
@@ -525,23 +564,20 @@ class AdminTable(ListViewMixin, _HasConfig):
             content_type="application/json",
         )
 
-    @AuthRouteMixin.protected
     def page_view_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
-        page_name = unquote(request.path_params["page_name"])
-        for page in self.config.pages:
-            if page.name == page_name:
-                return AdminTableRoute.RouteResponse(
-                    body={
-                        "display": page.display,
-                        "name": page.name,
-                        "content": page.content(request) if callable(page.content) else page.content,
-                        "type": page.type,
-                    },
-                    content_type="application/json",
-                )
+        page = self.get_page(request.path_params["page_name"])
+
+        # check request authentication for non-public forms
+        if not page.public and (response := AuthRouteMixin.check_request(self, request)) is not None:
+            return response
+
         return AdminTableRoute.RouteResponse(
-            status_code=404,
-            body={"message": f"Page {page_name} not found"},
+            body={
+                "display": page.display,
+                "name": page.name,
+                "content": page.content(request) if callable(page.content) else page.content,
+                "type": page.type,
+            },
             content_type="application/json",
         )
 
@@ -574,27 +610,7 @@ class AdminTable(ListViewMixin, _HasConfig):
                 content_type="application/json",
             )
 
-        if hasattr(callback_ret, resource.id_col):
-            return AdminTableRoute.RouteResponse(
-                body={
-                    "message": "Resource created",
-                    "redirect": {
-                        "type": "detail",
-                        "resource": resource.name,
-                        "id": getattr(callback_ret, resource.id_col),
-                    },
-                },
-                content_type="application/json",
-            )
-
-        # TODO handle user-defined redirect
-
-        return AdminTableRoute.RouteResponse(
-            body={
-                "message": str(callback_ret or "Resource created"),
-            },
-            content_type="application/json",
-        )
+        return self.process_handler_return(callback_ret, current_resource=resource)
 
     @AuthRouteMixin.protected
     def resource_detail_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
@@ -619,7 +635,7 @@ class AdminTable(ListViewMixin, _HasConfig):
 
         def get_param(attr: str, param: Parameter) -> dict[str, Any]:
             type_map = {int: "int", str: "str", Parameter.empty: "str", bool: "bool"}
-            description = next(
+            desc = next(
                 (
                     y
                     for y in (getattr(x, "documentation", None) for x in getattr(param.annotation, "__metadata__", []))
@@ -635,7 +651,7 @@ class AdminTable(ListViewMixin, _HasConfig):
                 "title": attr.replace("_", " ").title(),
                 "type": type_map[value_type],
                 "required": param.default == Parameter.empty,
-                "description": description,
+                "description": desc,
             }
 
         actions = []
@@ -772,6 +788,7 @@ class AdminTable(ListViewMixin, _HasConfig):
 
         try:
             ret = action(entry, **params)
+            return self.process_handler_return(ret)
         except Exception as e:
             logging.exception(f"Failed calling action: {e}")
             return AdminTableRoute.RouteResponse(
@@ -779,11 +796,6 @@ class AdminTable(ListViewMixin, _HasConfig):
                 body={"message": f"Failed calling action: {e}", "failed": True},
                 content_type="application/json",
             )
-
-        return AdminTableRoute.RouteResponse(
-            body={"message": str(ret) or "Action call success"},
-            content_type="application/json",
-        )
 
     @AuthRouteMixin.protected
     def dashboard_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
@@ -803,6 +815,44 @@ class AdminTable(ListViewMixin, _HasConfig):
             return AdminTableRoute.RouteResponse(
                 status_code=500,
                 body={"message": f"Internal server error: {e}"},
+                content_type="application/json",
+            )
+
+    def get_input_form_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+        form = self.get_input_form(request.path_params["location"])
+
+        # check request authentication for non-public forms
+        if not form.public and (response := AuthRouteMixin.check_request(self, request)) is not None:
+            return response
+
+        description = form.description() if callable(form.description) else form.description
+
+        return AdminTableRoute.RouteResponse(
+            status_code=200,
+            body={
+                "title": form.title,
+                "public": form.public,
+                "description": description,
+                "schema": form.schema.model_json_schema(),
+            },
+            content_type="application/json",
+        )
+
+    def submit_input_form_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+        form = self.get_input_form(request.path_params["location"])
+
+        # check request authentication for non-public forms
+        if not form.public and (response := AuthRouteMixin.check_request(self, request)) is not None:
+            return response
+
+        try:
+            data = form.schema(**request.body)
+            callback_ret = form.callback(data)
+            return self.process_handler_return(callback_ret)
+        except Exception as e:
+            return AdminTableRoute.RouteResponse(
+                status_code=500,
+                body={"message": f"error: {e}"},
                 content_type="application/json",
             )
 
@@ -828,3 +878,79 @@ class AdminTable(ListViewMixin, _HasConfig):
                 status_code=404,
                 body="Not Found",
             )
+
+    def process_handler_return(
+        self, callback_ret: Any, current_resource: Resource | None = None
+    ) -> AdminTableRoute.RouteResponse:
+        if isinstance(callback_ret, RefreshView):
+            return AdminTableRoute.RouteResponse(
+                body={"message": callback_ret.message or "Success", "refresh": True},
+                content_type="application/json",
+            )
+
+        if isinstance(callback_ret, RedirectDetail):
+            return AdminTableRoute.RouteResponse(
+                body={
+                    "message": callback_ret.message or "Success",
+                    "redirect": {
+                        "type": "detail",
+                        "resource": callback_ret.resource,
+                        "id": callback_ret.id,
+                    },
+                },
+                content_type="application/json",
+            )
+
+        if isinstance(callback_ret, RedirectList):
+            return AdminTableRoute.RouteResponse(
+                body={
+                    "message": callback_ret.message or "Success",
+                    "redirect": {
+                        "type": "list",
+                        "resource": callback_ret.resource,
+                        "filters": [
+                            {
+                                "ref": f.ref,
+                                "op": f.op,
+                                "val": f.val,
+                                "display": f.display,
+                            }
+                            for f in callback_ret.filters
+                        ],
+                    },
+                },
+                content_type="application/json",
+            )
+
+        if isinstance(callback_ret, RedirectPage):  # noqa: F821
+            return AdminTableRoute.RouteResponse(
+                body={
+                    "message": callback_ret.message or "Success",
+                    "redirect": {
+                        "type": "page",
+                        "page": callback_ret.page,
+                    },
+                },
+                content_type="application/json",
+            )
+
+        if isinstance(callback_ret, str):
+            return AdminTableRoute.RouteResponse(
+                body={"message": callback_ret},
+                content_type="application/json",
+            )
+
+        if current_resource:
+            if isinstance(callback_ret, dict) and "id" in callback_ret and current_resource:
+                return self.process_handler_return(
+                    RedirectDetail(resource=current_resource.name, id=callback_ret["id"])
+                )
+            if hasattr(callback_ret, "id") and current_resource:
+                return self.process_handler_return(RedirectDetail(resource=current_resource.name, id=callback_ret.id))
+
+        if callback_ret is None:
+            return AdminTableRoute.RouteResponse(
+                body={"message": "Success"},
+                content_type="application/json",
+            )
+        raise TypeError(f"Invalid handler response type: {type(callback_ret)}")

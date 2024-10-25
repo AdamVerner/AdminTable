@@ -78,6 +78,16 @@ type DataEntry =
       };
     };
 
+interface ActionResponse {
+  message: string;
+  failed?: true;
+  refresh?: true;
+  redirect?:
+    | { type: 'detail'; resource: string; id: string }
+    | { type: 'list'; resource: string; filters: { ref: string; op: string; val: string }[] }
+    | { type: 'customPage'; name: string };
+}
+
 class DataService {
   data_api = new DataAPI(API_URL);
 
@@ -176,17 +186,7 @@ class DataService {
     return await this.data_api.get(`resource/${resourceName}/create`);
   }
 
-  async createResource(
-    resourceName: string,
-    data: any
-  ): Promise<{
-    message: string;
-    failed?: true;
-    redirect?:
-      | { type: 'detail'; resource: string; id: string }
-      | { type: 'table'; resource: string; filters: { ref: string; op: string; val: string }[] }
-      | { type: 'customPage'; name: string };
-  }> {
+  async createResource(resourceName: string, data: any): Promise<ActionResponse> {
     return await this.data_api.post(`resource/${resourceName}/create`, data);
   }
   async getDetail(
@@ -233,16 +233,16 @@ class DataService {
     id: string,
     ref: string,
     data: Record<string, any>
-  ): Promise<{ message: string; failed?: boolean }> {
+  ): Promise<ActionResponse> {
     return await this.data_api.post(`resource/${resourceName}/detail/${id}/action/${ref}`, {
       params: data,
     });
   }
 
-  async getBanner(): Promise<{
+  async getDashboard(): Promise<{
     content: string;
   }> {
-    return await this.data_api.get('banner');
+    return await this.data_api.get('dashboard');
   }
 
   async getDetailGraph(
@@ -271,6 +271,18 @@ class DataService {
       `resource/${resourceName}/detail/${detailId}/graph/${graphRef}?${p.toString()}`
     );
   }
+
+  async getInputForm(formName: string): Promise<{
+    title?: string;
+    description?: string;
+    schema: any;
+  }> {
+    return await this.data_api.get(`input_form/${formName}`);
+  }
+
+  async submitInputForm(formName: string, data: any): Promise<ActionResponse> {
+    return await this.data_api.post(`input_form/${formName}`, data);
+  }
 }
 
 export function useGetData<DataReturn>(
@@ -279,7 +291,7 @@ export function useGetData<DataReturn>(
   reportSuccess: boolean = false
 ): [DataReturn | undefined, boolean, string] {
   const [data, setData] = useState<DataReturn>();
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [failed, setFailed] = useState('');
 
   useEffect(() => {

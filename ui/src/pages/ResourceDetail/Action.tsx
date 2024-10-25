@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   Button,
   Center,
@@ -12,7 +12,7 @@ import {
   Tooltip,
 } from '@mantine/core';
 import { useForm, UseFormReturnType } from '@mantine/form';
-import { notifications } from '@mantine/notifications';
+import actionResponseHandler from '@/components/actionResponseHandler';
 import dataService from '@/services/data.service';
 
 interface ActionProps {
@@ -28,6 +28,7 @@ interface ActionProps {
       description: string | null;
     }[];
   };
+  onRefresh: () => void;
 }
 
 interface ActionParamInputProps {
@@ -68,7 +69,8 @@ const ActionParamInput = ({ p, form }: ActionParamInputProps) => {
 
   return <Tooltip label={<p>{p.description}</p>}>{widget}</Tooltip>;
 };
-export const Action = ({ action }: ActionProps) => {
+export const Action = ({ action, onRefresh }: ActionProps) => {
+  const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { resourceName, detailId } = useParams();
   const form = useForm({
@@ -91,26 +93,18 @@ export const Action = ({ action }: ActionProps) => {
   const onSubmit = () => {
     setIsSubmitting(true);
     const params = form.getValues();
-    dataService.executeAction(resourceName!, detailId!, action.ref, params).then(
-      (res) => {
-        notifications.show({
-          title: res.failed ? 'Action Failed' : 'Action Success',
-          message: res.message,
-          color: res.failed ? 'red' : 'blue',
-          autoClose: res.failed ? 15000 : 5000,
-        });
+    actionResponseHandler(
+      dataService.executeAction(resourceName!, detailId!, action.ref, params),
+      navigate
+    )
+      .then((data) => {
+        if (data?.refresh) {
+          onRefresh();
+        }
+      })
+      .finally(() => {
         setIsSubmitting(false);
-      },
-      (err) => {
-        notifications.show({
-          title: `Action Failed`,
-          message: `Failed: ${err}`,
-          color: 'red',
-          autoClose: 15000,
-        });
-        setIsSubmitting(false);
-      }
-    );
+      });
   };
 
   return (

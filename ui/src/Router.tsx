@@ -9,16 +9,21 @@ import {
 } from 'react-router-dom';
 import Loader from '@/components/Loader';
 import CustomPage from '@/pages/CustomPage.page';
+import HomeDashboardPage from '@/pages/HomeDashboard.page';
+import InputFormPage from '@/pages/InputForm.page';
 import CreateResourcePage from '@/pages/ResourceCreate';
 import ResourceDetail from '@/pages/ResourceDetail';
 import ResourceListPage from '@/pages/ResourceList';
 import { authService } from '@/services/auth';
 import { Layout } from './Layout';
-import HomePage from './pages/Home.page';
 import { LoginPage } from './pages/Login.page';
 
-const ProtectedRoutes = () => {
-  const location = useLocation();
+interface UserLoginHandlerProps {
+  loggedInComponent?: React.ReactNode;
+  notLoggedInComponent?: React.ReactNode;
+}
+
+const UserLoginHandler = ({ loggedInComponent, notLoggedInComponent }: UserLoginHandlerProps) => {
   const [loading, setLoading] = useState(true);
   const [loggedIn, setLoggedIn] = useState(false);
 
@@ -36,12 +41,22 @@ const ProtectedRoutes = () => {
     return <Loader />;
   }
 
-  if (loggedIn) {
-    return <Outlet />;
-  }
+  return loggedIn ? loggedInComponent : notLoggedInComponent;
+};
 
-  // return "home vole"
-  return <Navigate to="/login" replace state={{ from: location }} />;
+const ProtectedRoutes = () => {
+  const location = useLocation();
+
+  return (
+    <UserLoginHandler
+      loggedInComponent={<Outlet />}
+      notLoggedInComponent={<Navigate to="/login" replace state={{ from: location }} />}
+    />
+  );
+};
+
+const LayoutMaybeLoggedIn = () => {
+  return <UserLoginHandler loggedInComponent={<Layout />} notLoggedInComponent={<Outlet />} />;
 };
 
 const router = createHashRouter(
@@ -56,7 +71,7 @@ const router = createHashRouter(
           children: [
             {
               path: '/',
-              element: <HomePage />,
+              element: <HomeDashboardPage />,
             },
             {
               path: 'resource/:resourceName/list',
@@ -70,11 +85,27 @@ const router = createHashRouter(
               path: 'resource/:resourceName/detail/:detailId',
               element: <ResourceDetail />,
             },
-            {
-              path: 'page/:pageName',
-              element: <CustomPage />,
-            },
           ],
+        },
+      ],
+    },
+    {
+      path: '/page',
+      element: <LayoutMaybeLoggedIn />,
+      children: [
+        {
+          path: ':pageName',
+          element: <CustomPage />,
+        },
+      ],
+    },
+    {
+      path: '/forms',
+      element: <LayoutMaybeLoggedIn />,
+      children: [
+        {
+          path: ':formName',
+          element: <InputFormPage />,
         },
       ],
     },

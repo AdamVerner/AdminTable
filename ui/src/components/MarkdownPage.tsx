@@ -4,6 +4,11 @@ import remarkGfm from 'remark-gfm';
 import { Text, TypographyStylesProvider } from '@mantine/core';
 import UserChart from '@/components/UserChart';
 
+/**
+ * Element to handle rendering of any markdown content
+ * @param content
+ * @constructor
+ */
 export const MarkdownPage = ({ content }: { content: string }) => {
   const code = ({
     node,
@@ -62,7 +67,7 @@ export const MarkdownPage = ({ content }: { content: string }) => {
   };
 
   return (
-    <TypographyStylesProvider>
+    <TypographyStylesProvider component="div">
       <Markdown
         remarkPlugins={[remarkGfm]}
         components={{

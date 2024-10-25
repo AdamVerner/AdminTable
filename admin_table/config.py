@@ -2,7 +2,7 @@ import abc
 import dataclasses
 import random
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Generic, List, Optional, Protocol, Tuple, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Generic, List, Optional, Protocol, Tuple, TypeAlias, TypedDict, TypeVar
 
 from pydantic import BaseModel
 from sqlalchemy import Column
@@ -10,7 +10,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from typing_extensions import Annotated, Doc, Literal
 
 if TYPE_CHECKING:
-    from admin_table.modules.bases.list_resolver import ResolverBase
+    from admin_table.modules.bases.resolver import ResolverBase
 
 
 class DefaultAuthProvider:
@@ -91,6 +91,14 @@ class AdminTableConfig:
     navigation_icons: Annotated[
         dict[str, NavigationIcon], Doc("Icons which should be displayed alongside the navigation links")
     ] = dataclasses.field(default_factory=dict)
+    input_forms: Annotated[
+        List["InputForm"],
+        Doc(
+            "List of all forms which can be used through the application."
+            "Each form will be available on ~/forms/<form_name>."
+            "forms can be both public and private."
+        ),
+    ] = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass
@@ -119,6 +127,7 @@ class Resource(Navigable):
 class Page(Navigable):
     content: Annotated[str | Callable[..., str], Doc("static content of function generating content")]
     type: Annotated[Literal["html", "markdown"], Doc("Type of the content")] = "markdown"
+    public: Annotated[bool, Doc("If the page should be public or private")] = False
 
 
 @dataclasses.dataclass
@@ -223,10 +232,45 @@ class ListView(ViewBase):
 CreateSchemaModel = TypeVar("CreateSchemaModel", bound=BaseModel)
 
 
+class CallbackReturnDict(TypedDict):
+    id: Optional[str]
+
+
+@dataclasses.dataclass()
+class HandlerAction(abc.ABC):
+    message: Optional[str] = None
+
+
+@dataclasses.dataclass()
+class RefreshView(HandlerAction):
+    pass
+
+
+@dataclasses.dataclass(kw_only=True)
+class RedirectDetail(HandlerAction):
+    resource: str
+    id: str
+
+
+@dataclasses.dataclass(kw_only=True)
+class RedirectList(HandlerAction):
+    resource: str
+    filters: list["ResolverBase.AppliedFilter"] = dataclasses.field(default_factory=list)
+    sort: Optional[Tuple[str, str]] = None
+
+
+@dataclasses.dataclass(kw_only=True)
+class RedirectCustomPage(HandlerAction):
+    page_name: str
+
+
+GenericCallbackReturnValue = None | str | HandlerAction | CallbackReturnDict
+
+
 @dataclasses.dataclass(kw_only=True)
 class CreateView(ViewBase, Generic[CreateSchemaModel]):
     schema: type[CreateSchemaModel]
-    callback: Callable[[CreateSchemaModel], Any]
+    callback: Callable[[CreateSchemaModel], GenericCallbackReturnValue]
 
 
 @dataclasses.dataclass
@@ -311,7 +355,7 @@ class GetGraphCallback(Protocol):
 class DetailView(ViewBase):
     fields: Annotated[list[ListViewFieldType], Doc("List of fields to be selected from the model")]
     actions: Annotated[
-        List[Callable[..., Any]],
+        List[Callable[..., GenericCallbackReturnValue]],
         Doc(
             "List of actions to be added to the view."
             "Name and description of the action is taken from the functions __name__ and __doc__"
@@ -333,3 +377,13 @@ class DetailView(ViewBase):
             "The first parameter of the function is the data model from the resolver"
         ),
     ] = dataclasses.field(default_factory=list)
+
+
+@dataclasses.dataclass(kw_only=True)
+class InputForm:
+    location: Annotated[str, Doc("Location used to access the form. Must be unique and html-encoded")]
+    public: Annotated[bool, Doc("If the form should be public or private")] = False
+    title: Annotated[str, Doc("Title of the form")]
+    description: Annotated[str | Callable[[], str], Doc("Description of the form (or generator)")]
+    schema: Annotated[type[BaseModel], Doc("Schema of the form")]
+    callback: Annotated[Callable[[BaseModel], GenericCallbackReturnValue], Doc("Callback function for the form")]

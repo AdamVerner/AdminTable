@@ -11,9 +11,10 @@ import dataService, { useGetData } from '@/services/data.service';
 export default () => {
   const { resourceName, detailId } = useParams();
   const navigate = useNavigate();
+  const [refresh, setRefresh] = React.useState(1);
   const [data, isLoading, failed] = useGetData(async () => {
     return await dataService.getDetail(resourceName!, detailId!);
-  }, [resourceName, detailId]);
+  }, [resourceName, detailId, refresh]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -64,7 +65,7 @@ export default () => {
           </Title>
           <Stack ml="md">
             {data.actions.map((action, i) => (
-              <Action key={i} action={action} />
+              <Action key={i} action={action} onRefresh={() => setRefresh(refresh + 1)} />
             ))}
           </Stack>
         </>

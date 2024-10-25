@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime
 
 from base import Base
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Uuid
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Uuid, func
 from sqlalchemy.orm import relationship
 
 
@@ -14,6 +15,8 @@ class User(Base):
     is_active = Column(Boolean, default=True)
 
     items = relationship("Item", back_populates="owner")
+
+    created_at = Column(DateTime, default=datetime.now, server_default=func.now())
 
 
 class Item(Base):

@@ -1,3 +1,6 @@
+import sys
+import traceback
+from datetime import datetime
 from typing import Any, Awaitable
 
 from fastapi import Body, FastAPI, Request
@@ -7,6 +10,10 @@ from starlette.types import Receive, Scope, Send
 
 from ..application import AdminTableRoute
 from ._base import BaseWrapper
+
+custom_encoder = {
+    datetime: lambda dt: dt.strftime("%Y-%m-%d %H:%M:%S"),
+}
 
 
 class FastAPIWrapper(BaseWrapper):
@@ -37,19 +44,23 @@ class FastAPIWrapper(BaseWrapper):
             )
 
             # call the route handler
-            response = route.handler(handler_request)
+            try:
+                response = route.handler(handler_request)
+            except Exception:
+                traceback.print_exc(5, sys.stderr)
+                raise
 
             # process handler response
             if isinstance(response, str):
                 return Response(content=response, media_type=route.content_type)
             if isinstance(response, dict):
-                return JSONResponse(content=jsonable_encoder(response))
+                return JSONResponse(content=jsonable_encoder(response, custom_encoder=custom_encoder))
             if isinstance(response, AdminTableRoute.RouteResponse):
                 content_type = response.headers.get("content-type", None) or response.content_type or route.content_type
                 handler_response: JSONResponse | Response
                 if content_type == "application/json":
                     handler_response = JSONResponse(
-                        content=jsonable_encoder(response.body),
+                        content=jsonable_encoder(response.body, custom_encoder=custom_encoder),
                         headers=response.headers,
                         status_code=response.status_code,
                     )

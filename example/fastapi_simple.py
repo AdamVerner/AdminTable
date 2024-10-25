@@ -21,11 +21,14 @@ from admin_table import AdminTable, AdminTableConfig, Resource, ResourceViews
 from admin_table.config import (
     CreateView,
     DetailView,
+    InputForm,
     LineGraphData,
     LinkDetail,
     LinkTable,
     ListView,
     Page,
+    RedirectList,
+    RefreshView,
     SubTable,
 )
 from admin_table.modules import SQLAlchemyResolver
@@ -43,12 +46,16 @@ def custom_user_action(
     return f"performed action on {user} with params: {string_param}, {int_param}, {bool_param}"
 
 
-def another_action(user: User, bool_param: bool) -> str:
+def another_action(user: User, bool_param: bool) -> RedirectList:
     """
     Performs various actions on the user :wink:
     Try to pass "hello" into the `string_param` and see what happens
     """
-    return f"performed action on {user} {bool_param}"
+    with SessionLocal() as ss:
+        ss.add(user)
+        return RedirectList(
+            resource="Items", filters=[SQLAlchemyResolver.AppliedFilter("id", "eq", str(user.items[-1].id))]
+        )
 
 
 def hello(user: User, b1: bool, b2: bool, string1: str, string2: str, string3: str) -> str:
@@ -57,6 +64,17 @@ def hello(user: User, b1: bool, b2: bool, string1: str, string2: str, string3: s
     Try to pass "hello" into the `string_param` and see what happens
     """
     raise Exception("World")
+
+
+def create_item(user: User, title: str, description: str, public: bool = False) -> RefreshView:
+    """
+    Creates new item
+    """
+    with SessionLocal() as ss:
+        item = Item(title=title, description=description, public=public, owner_id=user.id)
+        ss.add(item)
+        ss.commit()
+        return RefreshView(message=f"Created item {item}")
 
 
 def random_graph_data(
@@ -111,7 +129,8 @@ icon_data = open(os.path.join(os.path.dirname(__file__), "icon.png"), "rb").read
 icon_src = f"data:{'image/png'};base64,{base64.b64encode(icon_data).decode()}"
 config = AdminTableConfig(
     name="Simple Admin Table example",
-    dashboard=lambda u: f"# Dashboard\n\nWelcome {u.email} to Simple Example of TableAPI",
+    dashboard=lambda u: f"# Dashboard\n\nWelcome {u.email} to Simple Example of TableAPI\n\n"
+    f"Checkout input form at [test_form](./#forms/test_form?field1=prefilled%20value)\n\n",
     icon_src=icon_src,
     version="dev",
     resources=[
@@ -152,6 +171,7 @@ config = AdminTableConfig(
                         ("Active", User.is_active),
                         ("Items", "item_count"),
                         ("Items Link", LinkTable("item_count", "Items", "owner_id", "eq", "id")),
+                        ("Created At", User.created_at),
                         (
                             "Custom Field",
                             "This field has been computed",
@@ -173,15 +193,15 @@ config = AdminTableConfig(
                             lambda d: '{"key": "value", "key2": "value2", "sub": {"key": "value"}}',
                         ),
                     ],
-                    actions=[custom_user_action, another_action, hello],
+                    actions=[custom_user_action, another_action, hello, create_item],
                     tables=[SubTable("Items", "Items", "owner_id", "eq", "id")],
                     graphs=[random_graph_data],
                 ),
                 create=CreateView(
                     schema=create_model(
-                        "CreateUser", email=(str, Field(..., description="user email")), username=(str, Field(...))
+                        "CreateUser", email=(str, Field(..., title="user email")), username=(str, Field(...))
                     ),
-                    callback=lambda user: print("Creating user", user),
+                    callback=lambda user: f"Created User: {user}",
                 ),
             ),
         ),
@@ -241,6 +261,7 @@ config = AdminTableConfig(
             type="html",
         ),
         Page(
+            public=True,
             name="Custom Markdown page",
             navigation="Custom Pages",
             content=lambda request: "# Dashboard\n\nWelcome to the markdown page",
@@ -257,6 +278,35 @@ config = AdminTableConfig(
         "Users": "user",
         "Custom Pages": "book",
     },
+    input_forms=[
+        InputForm(
+            public=True,
+            location="test_form",
+            title="Public form",
+            description=lambda: "> Form description in markdown format",
+            schema=create_model(
+                "Public form",
+                field1=(str, Field(title="String Field")),
+                integer_value=(int, Field(title="Integer Field")),
+                hidden_field=(
+                    str,
+                    Field("secret value", json_schema_extra={"format": "hidden"}),
+                ),
+            ),
+            callback=lambda model: print("Public form called: ", model),
+        ),
+        InputForm(
+            public=False,
+            location="test_form_private",
+            title="Private form",
+            description=lambda: "This form should be visible only to logged-in users",
+            schema=create_model(
+                "Private form",
+                field1=(str, Field(title="String Field")),
+            ),
+            callback=lambda model: "Successfully submitted form with data: " + json.dumps(model.dict()),
+        ),
+    ],
 )
 
 Base.metadata.create_all(bind=engine)
