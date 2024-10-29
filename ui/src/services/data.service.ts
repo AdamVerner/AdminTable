@@ -5,16 +5,15 @@ import { authService } from '@/services/auth';
 
 const API_URL = import.meta.env?.VITE_API_URL ?? './';
 
-export const operators = {
-  eq: '=',
-  ne: '!=',
-  lt: '<',
-  le: '<=',
-  gt: '>',
-  ge: '>=',
-  in: 'in',
-  like: 'like',
-  ilike: 'ilike',
+const hexDecode = function (str: string) {
+  let hex, i;
+  let result = '';
+  for (i = 0; i < str.length; i++) {
+    hex = str.charCodeAt(i).toString(16);
+    result += `0${hex}`.slice(-2);
+  }
+
+  return result;
 };
 
 export class DataAPI {
@@ -46,6 +45,16 @@ export class DataAPI {
 
         throw new Error(e?.response?.data?.message ?? `Request failed: ${e.message}`);
       });
+  }
+
+  websocket(url: string): WebSocket {
+    const ws_url = this.apiUrl.replace('http', 'ws') + url;
+
+    const auth = authService.getHeaders().Authorization;
+    if (auth) {
+      return new WebSocket(ws_url, [`bearer${hexDecode(auth)}`]);
+    }
+    return new WebSocket(ws_url);
   }
 }
 
@@ -282,6 +291,10 @@ class DataService {
 
   async submitInputForm(formName: string, data: any): Promise<ActionResponse> {
     return await this.data_api.post(`input_form/${formName}`, data);
+  }
+
+  getLiveDataSocket(topic: string): WebSocket {
+    return this.data_api.websocket(`ws/live_data/${topic}`);
   }
 }
 

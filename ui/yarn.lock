@@ -4851,6 +4851,7 @@ __metadata:
     react-dom: "npm:^18.3.1"
     react-markdown: "npm:^9.0.1"
     react-router-dom: "npm:^6.26.1"
+    react-use-websocket: "npm:^4.10.0"
     recharts: "npm:2"
     remark-gfm: "npm:^4.0.0"
     storybook: "npm:^8.2.9"
@@ -11429,6 +11430,13 @@ __metadata:
     react: ">=16.6.0"
     react-dom: ">=16.6.0"
   checksum: 10c0/2ba754ba748faefa15f87c96dfa700d5525054a0141de8c75763aae6734af0740e77e11261a1e8f4ffc08fd9ab78510122e05c21c2d79066c38bb6861a886c82
+  languageName: node
+  linkType: hard
+
+"react-use-websocket@npm:^4.10.0":
+  version: 4.10.0
+  resolution: "react-use-websocket@npm:4.10.0"
+  checksum: 10c0/92d20f270010a89a7f38e56937a477daf046457870ca8f3c5c3b26d4d54ab146c17fd0fdc738cd941f4678d4c858c3904a28d95ca8fd2a508c74caeaf8967411
   languageName: node
   linkType: hard
 

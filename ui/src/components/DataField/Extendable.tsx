@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
 import { IconEye } from '@tabler/icons-react';
-import { Link } from 'react-router-dom';
 import { Anchor, Code, Group, Modal, Text, Title, TypographyStylesProvider } from '@mantine/core';
 import { MarkdownPage } from '@/components/MarkdownPage';
-import { linkBuilder } from '@/RouterControl';
 
 export const fix_title = (title: string): string => {
   if (title.startsWith('[[html]]')) {
@@ -18,7 +16,12 @@ export const fix_title = (title: string): string => {
   return title;
 };
 
-const Extendable = ({ title, value }: { title?: string; value: string | any }) => {
+export interface ExtendableProps {
+  title?: string;
+  value: string | any;
+}
+
+export default ({ title, value }: ExtendableProps) => {
   const [opened, setOpened] = useState(false);
   const handleOpen = () => setOpened(true);
   const handleClose = () => setOpened(false);
@@ -35,7 +38,7 @@ const Extendable = ({ title, value }: { title?: string; value: string | any }) =
   const in_modal = is_long || is_html || is_markdown || is_json;
 
   if (!in_modal) {
-    return <Text>{value}</Text>;
+    return <Text style={{ minWidth: '3em' }}>{value}</Text>;
   }
   let modal_content;
   if (is_html) {
@@ -73,58 +76,4 @@ const Extendable = ({ title, value }: { title?: string; value: string | any }) =
       </Modal>
     </div>
   );
-};
-
-export interface DataFieldProps {
-  title?: string;
-  cell:
-    | string
-    | number
-    | boolean
-    | {
-        type: 'link';
-        kind: 'detail';
-        resource: string;
-        value: string;
-        id: string;
-      }
-    | {
-        type: 'link';
-        kind: 'table';
-        resource: string;
-        value: string;
-        filter: {
-          col: string;
-          op: string;
-          val: string;
-        };
-      };
-}
-
-export default ({ cell, title }: DataFieldProps) => {
-  if (typeof cell !== 'object' || !cell) {
-    return <Extendable title={title} value={`${cell}`} />;
-  }
-  if (cell.type === 'link' && cell.kind === 'detail') {
-    if (!cell.resource || !cell.id) {
-      return <Extendable title={title} value="" />;
-    }
-    return (
-      <Link to={linkBuilder.ResourceDetail(cell.resource, cell.id)}>
-        <Extendable title={title} value={cell.value} />
-      </Link>
-    );
-  }
-  if (cell.type === 'link' && cell.kind === 'table') {
-    return (
-      <Link
-        to={linkBuilder.ResourceList(cell.resource, [
-          { ref: cell.filter.col, op: cell.filter.op, val: cell.filter.val },
-        ])}
-      >
-        <Extendable title={title} value={cell.value} />
-      </Link>
-    );
-  }
-  return JSON.stringify(cell);
 };

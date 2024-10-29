@@ -98,10 +98,6 @@ export default () => {
           </Stack>
         </>
       )}
-      <Title order={2} mb="md" mt="xl">
-        Live data
-      </Title>
-      <div>TODO...</div>
     </div>
   );
 };

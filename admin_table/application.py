@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 import datetime
 import logging
@@ -5,11 +6,14 @@ import os.path
 import string
 import sys
 from inspect import Parameter, signature
-from typing import Any, Callable, List, Literal, Tuple, cast
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Literal, Protocol, Tuple, TypedDict, cast
 from urllib.parse import quote, unquote
 
 from sqlalchemy.orm import InstrumentedAttribute
 from starlette.datastructures import ImmutableMultiDict
+from websockets import ConnectionClosed
+
+from admin_table.config import LiveDataManagerBase
 
 from .config import (
     AdminTableConfig,
@@ -22,6 +26,7 @@ from .config import (
     LinkDetail,
     LinkTable,
     ListView,
+    LiveValue,
     Page,
     RedirectDetail,
     RedirectList,
@@ -32,17 +37,51 @@ from .modules.bases import ResolverBase
 
 
 @dataclasses.dataclass
+class URL:
+    scheme: str
+    host: str
+    port: int
+    path: str
+    query: str
+
+
+class _WebsocketClose(Protocol):
+    def __call__(self, code: int | None = 1000, reason: str | None = None) -> Awaitable[None]: ...
+
+
+@dataclasses.dataclass
+class AdminTableWebsocket:
+    """
+    Specification of websocket "endpoint"
+    """
+
+    @dataclasses.dataclass
+    class Websocket:
+        url: URL
+        path_params: dict[str, str]
+        query_params: ImmutableMultiDict[str, str]
+        headers: dict[str, str]
+        cookies: dict[str, str]
+
+        accept: Callable[[], Awaitable[None]]
+        receive_json: Callable[[], Awaitable[dict[str, str]]]
+        send_json: Callable[[dict[str, str]], Awaitable[None]]
+        close: _WebsocketClose
+
+    path: str
+    name: str
+
+    accept: Callable[["AdminTableWebsocket.Websocket"], Awaitable[None]]
+    handle: Callable[["AdminTableWebsocket.Websocket"], Awaitable[None]]
+    disconnected: Callable[["AdminTableWebsocket.Websocket"], Awaitable[None]]
+    onerror: Callable[["AdminTableWebsocket.Websocket", Exception], Awaitable[None]] | None = None
+    finish: Callable[["AdminTableWebsocket.Websocket"], Awaitable[None]] | None = None
+
+
+@dataclasses.dataclass
 class AdminTableRoute:
     @dataclasses.dataclass
     class RouteRequest:
-        @dataclasses.dataclass
-        class URL:
-            scheme: str
-            host: str
-            port: int
-            path: str
-            query: str
-
         url: URL
         path_params: dict[str, str] = dataclasses.field(default_factory=lambda: {})
         query_params: ImmutableMultiDict[str, str] = dataclasses.field(default_factory=lambda: ImmutableMultiDict())
@@ -116,10 +155,16 @@ class _HasConfig:
 
 class AuthRouteMixin(_HasConfig):
     @staticmethod
-    def check_request(
-        admin_table: "AdminTable", request: AdminTableRoute.RouteRequest
-    ) -> AdminTableRoute.RouteResponse | None:
-        if not (authorization := request.headers.get("Authorization", request.headers.get("authorization"))):
+    def user_from_header(
+        admin_table: "AdminTable", headers: dict[str, str]
+    ) -> AdminTableRoute.RouteResponse | DefaultAuthProvider.User:
+        # check if bearer is passed in websocket protocol
+        if bearer := headers.get("sec-websocket-protocol", headers.get("Sec-WebSocket-Protocol")):
+            authorization = bytes.fromhex(bearer.removeprefix("bearer")).decode("utf-8")
+        else:
+            authorization = headers.get("Authorization", headers.get("authorization"))
+
+        if not authorization:
             return AdminTableRoute.RouteResponse(
                 status_code=401,
                 body={"message": "Unauthorized"},
@@ -134,7 +179,16 @@ class AuthRouteMixin(_HasConfig):
                 content_type="application/json",
             )
 
-        request.user = user
+        return user
+
+    @staticmethod
+    def check_request(
+        admin_table: "AdminTable", request: AdminTableRoute.RouteRequest
+    ) -> AdminTableRoute.RouteResponse | None:
+        r = AuthRouteMixin.user_from_header(admin_table, request.headers)
+        if isinstance(r, AdminTableRoute.RouteResponse):
+            return r
+        request.user = r
         return None
 
     @staticmethod
@@ -230,6 +284,22 @@ class _ComputedColumn(_Column):
         return str(value)
 
 
+class _LiveValueColumn(_Column):
+    def __init__(self, initial_value_ref: str | None, topic_ref: str, history: bool, **kwargs):
+        self.initial_value_ref = initial_value_ref
+        self.topic_ref = topic_ref
+        self.history = history
+        super().__init__(**kwargs)
+
+    def value(self, row):
+        return {
+            "type": "live",
+            "initial": row[self.initial_value_ref] if self.initial_value_ref else None,
+            "topic": row[self.topic_ref],
+            "history": self.history,
+        }
+
+
 def field_resolver(fields):
     for field in fields:
         # pattern match on the field type
@@ -245,6 +315,8 @@ def field_resolver(fields):
                 yield _Column(ref=ref, display=display, sortable=True)
             case [display, ref] if isinstance(ref, InstrumentedAttribute):
                 yield _Column(ref=ref.key, display=display, sortable=True)
+            case [display, handler] if callable(handler):
+                yield _ComputedColumn(handler, ref=None, display=display, sortable=False)
             case [display, ref] if isinstance(ref, LinkDetail):
                 yield _LinkDetailColumn(ref.resource, ref.id_ref, ref=ref.ref, display=display, sortable=True)
             case [display, ref] if isinstance(ref, LinkTable):
@@ -259,8 +331,10 @@ def field_resolver(fields):
                         sortable=True,
                     )
                 )
-            case [display, handler] if callable(handler):
-                yield _ComputedColumn(handler, ref=None, display=display, sortable=False)
+            case [display, ref] if isinstance(ref, LiveValue):
+                yield _LiveValueColumn(
+                    ref.initial_ref, ref.ref, ref.history, ref=ref.initial_ref, display=display, sortable=True
+                )
 
             # same cases, but now with description
             # I did not come up with a better way to do this unfortunately
@@ -268,6 +342,8 @@ def field_resolver(fields):
                 yield _Column(display=display, ref=ref, sortable=True, description=description)
             case [display, description, ref] if isinstance(ref, InstrumentedAttribute):
                 yield _Column(display=display, ref=ref.key, sortable=True, description=description)
+            case [display, description, handler] if callable(handler):
+                yield _ComputedColumn(ref, ref=None, display=display, sortable=False, description=description)
             case [display, description, ref] if isinstance(ref, LinkDetail):
                 yield _LinkDetailColumn(
                     ref.resource, ref.id_ref, ref=ref.ref, display=display, sortable=True, description=description
@@ -285,8 +361,16 @@ def field_resolver(fields):
                         description=description,
                     )
                 )
-            case [display, description, handler] if callable(handler):
-                yield _ComputedColumn(ref, ref=None, display=display, sortable=False, description=description)
+            case [display, description, ref] if isinstance(ref, LiveValue):
+                yield _LiveValueColumn(
+                    ref.initial_ref,
+                    ref.ref,
+                    ref.history,
+                    ref=ref.initial_ref,
+                    display=display,
+                    sortable=False,
+                    description=description,
+                )
 
             case _:
                 raise ValueError(f"Invalid field definition: {field}")
@@ -386,11 +470,19 @@ class ListViewMixin(AuthRouteMixin, _HasConfig):
 
 
 class AdminTable(ListViewMixin, _HasConfig):
+    class LiveDataTopic(TypedDict):
+        mgr: "LiveDataManagerBase"
+        itr: AsyncIterator[LiveDataManagerBase.DataEvent]
+        clients: list["AdminTableWebsocket.Websocket"]
+        work_lock: asyncio.Lock
+
     def __init__(self, config: "AdminTableConfig"):
         super().__init__(config)
 
         p = os.path.abspath(os.path.join(os.path.dirname(__file__), "ui/index.html"))
         assert os.path.isfile(p), f"folder with UI not found at {p}"
+
+        self._live_data_topics: Dict[str, AdminTable.LiveDataTopic] = {}
 
     @property
     def routes(self) -> List[AdminTableRoute]:
@@ -481,6 +573,74 @@ class AdminTable(ListViewMixin, _HasConfig):
                 handler=self.submit_input_form_handler,
             ),
             AdminTableRoute(path="/{path:path}", method="GET", name="catch_all", handler=self.default_handler),
+        ]
+
+    async def live_data_websocket_accept(self, ws: AdminTableWebsocket.Websocket):
+        r = AdminTable.user_from_header(self, ws.headers)
+        if isinstance(r, AdminTableRoute.RouteResponse):
+            await ws.close(401, r.body.get("message", "Unauthorized"))
+            raise Exception("Unauthorized")
+
+        # TODO check if user can access topic
+        print("accepting connection on: ", ws.url.path, "form: ", r)
+        await ws.accept()
+
+    async def live_data_topic_task(self, topic: str):
+        mgr = self.config.live_data_manager(topic)
+        iterable = mgr.produce_data()
+
+        while tpc := self._live_data_topics.get(topic):
+            # if there are no clients, stop producing data
+            if not tpc["clients"]:
+                mgr.produce = False
+                del self._live_data_topics[topic]
+                break
+
+            try:
+                data = await iterable.__anext__()
+            except StopAsyncIteration:
+                break
+
+            for client in list(tpc["clients"]):
+                try:
+                    await client.send_json({"value": data.value})
+                except ConnectionClosed:
+                    tpc["clients"].remove(client)
+                except Exception:
+                    raise
+
+    async def live_data_websocket_handler(self, ws: AdminTableWebsocket.Websocket) -> None:
+        topic = ws.path_params["topic"]
+
+        # if this is the first topic subscriber, create the topic production task
+        if topic not in self._live_data_topics:
+            task = asyncio.Task(self.live_data_topic_task(topic))
+            self._live_data_topics[topic] = {
+                "task": task,
+                "clients": [ws],
+            }
+        else:
+            self._live_data_topics[topic]["clients"].append(ws)
+
+        while True:
+            msg = await ws.receive_json()
+            print(f'received message "{msg}" on ws: {ws.url.path}. There should be no messages here', file=sys.stderr)
+
+    async def live_data_websocket_disconnect(self, ws: AdminTableWebsocket.Websocket):
+        topic = ws.path_params["topic"]
+        if tpc := self._live_data_topics.get(topic):
+            tpc["clients"].remove(ws)
+
+    @property
+    def websockets(self) -> List[AdminTableWebsocket]:
+        return [
+            AdminTableWebsocket(
+                path="/ws/live_data/{topic}",
+                name="websocket",
+                accept=self.live_data_websocket_accept,
+                handle=self.live_data_websocket_handler,
+                disconnected=self.live_data_websocket_disconnect,
+            )
         ]
 
     @AuthRouteMixin.protected

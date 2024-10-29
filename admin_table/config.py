@@ -2,7 +2,21 @@ import abc
 import dataclasses
 import random
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Generic, List, Optional, Protocol, Tuple, TypeAlias, TypedDict, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    Generic,
+    List,
+    Optional,
+    Protocol,
+    Tuple,
+    Type,
+    TypeAlias,
+    TypedDict,
+    TypeVar,
+)
 
 from pydantic import BaseModel
 from sqlalchemy import Column
@@ -99,6 +113,9 @@ class AdminTableConfig:
             "forms can be both public and private."
         ),
     ] = dataclasses.field(default_factory=list)
+    live_data_manager: Annotated[
+        Optional[Type["LiveDataManagerBase"]], Doc("Live data manager to be used for live data updates")
+    ] = None
 
 
 @dataclasses.dataclass
@@ -177,6 +194,22 @@ class LinkTable:
     filter_ref: str  # column to get filter value from
 
 
+@dataclasses.dataclass
+class LiveValue:
+    """Field which gets automatically updated by the live data manager"""
+
+    """Reference which contains the topic which the field will be subscribed to"""
+    ref: str
+
+    """Initial value of the field"""
+    initial_ref: str | None = None
+
+    """When True, displays a graph with historical data"""
+    history: bool = False
+
+    # TODO history range settings
+
+
 """
 Type for field definitions
   - str: provided string is used as the column name and to resolve the column from the model
@@ -191,7 +224,7 @@ Type for field definitions
   
 if the value starts with prefix [[markdown]] or [[html]] it will be rendered as such...
 """
-ResolvableFieldType = str | Column | InstrumentedAttribute | LinkDetail | LinkTable | Callable[[Any], Any]
+ResolvableFieldType = str | Column | InstrumentedAttribute | Callable[[Any], Any] | LinkDetail | LinkTable | LiveValue
 FieldName = str
 FieldDescription = str
 ListViewFieldType = (
@@ -387,3 +420,24 @@ class InputForm:
     description: Annotated[str | Callable[[], str], Doc("Description of the form (or generator)")]
     schema: Annotated[type[BaseModel], Doc("Schema of the form")]
     callback: Annotated[Callable[[BaseModel], GenericCallbackReturnValue], Doc("Callback function for the form")]
+
+
+class LiveDataManagerBase(abc.ABC):
+    """Base class for live-data manager"""
+
+    @dataclasses.dataclass
+    class DataEvent:
+        value: str
+
+    topic: str
+    produce: bool = True
+
+    class PushDataCallable(Protocol):
+        def __call__(self, data: int | str, metadata: dict[str, Any] = None) -> Awaitable[None]: ...
+
+    @abc.abstractmethod
+    def __init__(self, topic: str):
+        self.topic = topic
+
+    @abc.abstractmethod
+    async def produce_data(self) -> DataEvent: ...

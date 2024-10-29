@@ -2,7 +2,7 @@
   "name": "admin_table-frontend",
   "private": true,
   "type": "module",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "scripts": {
     "dev": "VITE_API_URL=http://localhost:8000/api/admin/ vite",
     "build": "tsc && vite build",
@@ -40,6 +40,7 @@
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
     "react-router-dom": "^6.26.1",
+    "react-use-websocket": "^4.10.0",
     "recharts": "2",
     "remark-gfm": "^4.0.0"
   },

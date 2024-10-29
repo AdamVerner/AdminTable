@@ -1,9 +1,11 @@
+import asyncio
 import base64
 import json
 import os.path
 import random
 from datetime import datetime, timedelta
-from typing import Annotated, Optional
+from random import randrange
+from typing import Annotated, AsyncIterable, Optional
 
 import uvicorn
 from base import Base, SessionLocal, engine
@@ -11,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from models import Item, User
 from pydantic import Field, create_model
-from sqlalchemy import func
+from sqlalchemy import func, literal
 from sqlalchemy.orm import Query
 from starlette import status
 from starlette.responses import RedirectResponse
@@ -26,6 +28,8 @@ from admin_table.config import (
     LinkDetail,
     LinkTable,
     ListView,
+    LiveDataManagerBase,
+    LiveValue,
     Page,
     RedirectList,
     RefreshView,
@@ -125,6 +129,16 @@ def generate_item_list_description() -> str:
     )
 
 
+class LiveDataProducer(LiveDataManagerBase):
+    def __init__(self, topic: str):
+        super().__init__(topic)
+
+    async def produce_data(self) -> AsyncIterable[LiveDataManagerBase.DataEvent]:
+        while self.produce:
+            await asyncio.sleep(1)
+            yield LiveDataManagerBase.DataEvent(str(randrange(1, 100)))
+
+
 icon_data = open(os.path.join(os.path.dirname(__file__), "icon.png"), "rb").read()
 icon_src = f"data:{'image/png'};base64,{base64.b64encode(icon_data).decode()}"
 config = AdminTableConfig(
@@ -143,6 +157,8 @@ config = AdminTableConfig(
                 User,
                 extra_cols={
                     "item_count": Query(func.count()).select_from(Item).filter(Item.owner_id == User.id),
+                    "topic_value": literal("topic_value"),
+                    "initial_topic_value": Query(func.abs(func.random() % 100)),
                 },
             ),
             views=ResourceViews(
@@ -191,6 +207,11 @@ config = AdminTableConfig(
                             "[[json]]JSON Field",
                             "This field will show formated JSON data",
                             lambda d: '{"key": "value", "key2": "value2", "sub": {"key": "value"}}',
+                        ),
+                        (
+                            "Live Value",
+                            "This field is automatically updated using the LiveDataManager",
+                            LiveValue("topic_value", "initial_topic_value", history=True),
                         ),
                     ],
                     actions=[custom_user_action, another_action, hello, create_item],
@@ -307,8 +328,11 @@ config = AdminTableConfig(
             callback=lambda model: "Successfully submitted form with data: " + json.dumps(model.dict()),
         ),
     ],
+    live_data_manager=LiveDataProducer,
 )
 
+
+# generate models and insert some data
 Base.metadata.create_all(bind=engine)
 
 with SessionLocal() as session:
@@ -326,7 +350,9 @@ with SessionLocal() as session:
     session.add(Item(title=f"other item {random.randint(10, 10**10)}", owner_id=u2.id, public=False))
     session.commit()
 
+
 at = AdminTable(config=config)
+
 app = FastAPI()
 # noinspection PyTypeChecker
 app.add_middleware(
