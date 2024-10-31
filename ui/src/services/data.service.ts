@@ -294,7 +294,9 @@ class DataService {
   }
 
   getLiveDataSocket(topic: string): WebSocket {
-    return this.data_api.websocket(`ws/live_data/${topic}`);
+    const query = new URLSearchParams();
+    query.append('topic', topic);
+    return this.data_api.websocket(`ws/live_data?${query.toString()}`);
   }
 }
 

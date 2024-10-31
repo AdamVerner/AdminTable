@@ -157,7 +157,7 @@ config = AdminTableConfig(
                 User,
                 extra_cols={
                     "item_count": Query(func.count()).select_from(Item).filter(Item.owner_id == User.id),
-                    "topic_value": literal("topic_value"),
+                    "topic_value": literal("some/topic/value"),
                     "initial_topic_value": Query(func.abs(func.random() % 100)),
                 },
             ),

@@ -582,7 +582,7 @@ class AdminTable(ListViewMixin, _HasConfig):
             raise Exception("Unauthorized")
 
         # TODO check if user can access topic
-        print("accepting connection on: ", ws.url.path, "form: ", r)
+        # print("accepting connection on: ", ws.url.path, "form: ", r)
         await ws.accept()
 
     async def live_data_topic_task(self, topic: str):
@@ -610,7 +610,7 @@ class AdminTable(ListViewMixin, _HasConfig):
                     raise
 
     async def live_data_websocket_handler(self, ws: AdminTableWebsocket.Websocket) -> None:
-        topic = ws.path_params["topic"]
+        topic = ws.query_params["topic"]
 
         # if this is the first topic subscriber, create the topic production task
         if topic not in self._live_data_topics:
@@ -627,7 +627,7 @@ class AdminTable(ListViewMixin, _HasConfig):
             print(f'received message "{msg}" on ws: {ws.url.path}. There should be no messages here', file=sys.stderr)
 
     async def live_data_websocket_disconnect(self, ws: AdminTableWebsocket.Websocket):
-        topic = ws.path_params["topic"]
+        topic = ws.query_params["topic"]
         if tpc := self._live_data_topics.get(topic):
             tpc["clients"].remove(ws)
 
@@ -635,7 +635,7 @@ class AdminTable(ListViewMixin, _HasConfig):
     def websockets(self) -> List[AdminTableWebsocket]:
         return [
             AdminTableWebsocket(
-                path="/ws/live_data/{topic}",
+                path="/ws/live_data",
                 name="websocket",
                 accept=self.live_data_websocket_accept,
                 handle=self.live_data_websocket_handler,
@@ -1021,7 +1021,6 @@ class AdminTable(ListViewMixin, _HasConfig):
         try:
             with open(p) as f:
                 data = f.read()
-                print("data", data[:100])
                 return AdminTableRoute.RouteResponse(
                     status_code=200,
                     body=data,
