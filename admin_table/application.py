@@ -5,15 +5,13 @@ import logging
 import os.path
 import string
 import sys
+from collections.abc import Awaitable, Callable
 from inspect import Parameter, signature
-from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Literal, Protocol, Tuple, TypedDict, cast
+from typing import Any, Literal, Protocol, TypedDict, cast
 from urllib.parse import quote, unquote
 
 from sqlalchemy.orm import InstrumentedAttribute
 from starlette.datastructures import ImmutableMultiDict
-from websockets import ConnectionClosed
-
-from admin_table.config import LiveDataManagerBase
 
 from .config import (
     AdminTableConfig,
@@ -28,6 +26,7 @@ from .config import (
     ListView,
     LiveValue,
     Page,
+    RedirectCustomPage,
     RedirectDetail,
     RedirectList,
     RefreshView,
@@ -38,15 +37,15 @@ from .modules.bases import ResolverBase
 
 @dataclasses.dataclass
 class URL:
-    scheme: str
-    host: str
-    port: int
-    path: str
-    query: str
+    scheme: str | None
+    host: str | None
+    port: int | None
+    path: str | None
+    query: str | None
 
 
 class _WebsocketClose(Protocol):
-    def __call__(self, code: int | None = 1000, reason: str | None = None) -> Awaitable[None]: ...
+    def __call__(self, code: int = 1000, reason: str | None = None) -> Awaitable[None]: ...
 
 
 @dataclasses.dataclass
@@ -97,7 +96,7 @@ class AdminTableRoute:
         status_code: int = 200
         body: dict | str = dataclasses.field(default_factory=lambda: {})
         headers: dict = dataclasses.field(default_factory=lambda: {})
-        cookies: List[dict] = dataclasses.field(default_factory=lambda: [])
+        cookies: list[dict] = dataclasses.field(default_factory=lambda: [])
         content_type: str | None = None
 
     path: str
@@ -162,7 +161,7 @@ class AuthRouteMixin(_HasConfig):
         if bearer := headers.get("sec-websocket-protocol", headers.get("Sec-WebSocket-Protocol")):
             authorization = bytes.fromhex(bearer.removeprefix("bearer")).decode("utf-8")
         else:
-            authorization = headers.get("Authorization", headers.get("authorization"))
+            authorization = headers.get("Authorization", headers.get("authorization") or "")
 
         if not authorization:
             return AdminTableRoute.RouteResponse(
@@ -215,7 +214,7 @@ class _Column:
     def value(self, row):
         return row[self.ref]
 
-    def head(self, current_sort: Tuple[str, Literal["asc", "desc"]] | None = None):
+    def head(self, current_sort: tuple[str, Literal["asc", "desc"]] | None = None):
         sort = None
         if current_sort:
             sort = current_sort[1] if current_sort[0] == self.ref else None
@@ -384,10 +383,10 @@ class ListViewMixin(AuthRouteMixin, _HasConfig):
 
         current_page = int(request.query_params.get("page", 1) or 1)
         current_per_page = int(request.query_params.get("per_page", 50) or 50)
-        raw_filters: List[Any] = [x.split(";") for x in request.query_params.getlist("filter")]
+        raw_filters: list[Any] = [x.split(";") for x in request.query_params.getlist("filter")]
         default_sort = f"{view.default_sort[0] or resource.id_col};{view.default_sort[1]}"
         current_sort = cast(
-            Tuple[str, Literal["asc", "desc"]],
+            tuple[str, Literal["asc", "desc"]],
             (request.query_params.get("sort", default_sort) or default_sort).split(";"),
         )
 
@@ -406,7 +405,7 @@ class ListViewMixin(AuthRouteMixin, _HasConfig):
             for ref, op, val in raw_filters
         ]
 
-        header: List[_Column] = []
+        header: list[_Column] = []
         if resource.views.detail is not None:
             header.append(
                 _LinkDetailColumn(
@@ -471,10 +470,10 @@ class ListViewMixin(AuthRouteMixin, _HasConfig):
 
 class AdminTable(ListViewMixin, _HasConfig):
     class LiveDataTopic(TypedDict):
-        mgr: "LiveDataManagerBase"
-        itr: AsyncIterator[LiveDataManagerBase.DataEvent]
+        task: asyncio.Task
         clients: list["AdminTableWebsocket.Websocket"]
-        work_lock: asyncio.Lock
+
+    _subscriber_info: dict[str, LiveDataTopic]
 
     def __init__(self, config: "AdminTableConfig"):
         super().__init__(config)
@@ -482,10 +481,10 @@ class AdminTable(ListViewMixin, _HasConfig):
         p = os.path.abspath(os.path.join(os.path.dirname(__file__), "ui/index.html"))
         assert os.path.isfile(p), f"folder with UI not found at {p}"
 
-        self._live_data_topics: Dict[str, AdminTable.LiveDataTopic] = {}
+        self._subscriber_info: dict[str, AdminTable.LiveDataTopic] = {}
 
     @property
-    def routes(self) -> List[AdminTableRoute]:
+    def routes(self) -> list[AdminTableRoute]:
         # noinspection PyTypeChecker
         return [
             AdminTableRoute(
@@ -578,61 +577,71 @@ class AdminTable(ListViewMixin, _HasConfig):
     async def live_data_websocket_accept(self, ws: AdminTableWebsocket.Websocket):
         r = AdminTable.user_from_header(self, ws.headers)
         if isinstance(r, AdminTableRoute.RouteResponse):
-            await ws.close(401, r.body.get("message", "Unauthorized"))
+            if isinstance(r.body, str):
+                await ws.close(401, r.body)
+            else:
+                await ws.close(401, r.body.get("message", "Unauthorized"))
+
             raise Exception("Unauthorized")
 
         # TODO check if user can access topic
-        # print("accepting connection on: ", ws.url.path, "form: ", r)
+        print("accepting connection on: ", ws.url.path, "form: ", r)
         await ws.accept()
 
     async def live_data_topic_task(self, topic: str):
-        mgr = self.config.live_data_manager(topic)
-        iterable = mgr.produce_data()
+        """
+        live data manager task. For new subscribed topic, spins up "live data" task
+        and broadcasts data to all clients.
+        """
 
-        while tpc := self._live_data_topics.get(topic):
-            # if there are no clients, stop producing data
-            if not tpc["clients"]:
-                mgr.produce = False
-                del self._live_data_topics[topic]
-                break
+        info = self._subscriber_info.get(topic, None)
+        assert info is not None, f"topic {topic} not in subscriber info"
+        assert self.config.live_data_manager is not None, "No live data manager configured"
 
-            try:
-                data = await iterable.__anext__()
-            except StopAsyncIteration:
-                break
+        try:
+            async with self.config.live_data_manager(topic) as topic_iterable:
+                # if there are no clients, stop producing data
+                while info["clients"]:
+                    data = await anext(topic_iterable)
 
-            for client in list(tpc["clients"]):
-                try:
-                    await client.send_json({"value": data.value})
-                except ConnectionClosed:
-                    tpc["clients"].remove(client)
-                except Exception:
-                    raise
+                    clients = list(info["clients"])
+                    excs = await asyncio.gather(
+                        *(c.send_json({"value": data.value}) for c in clients), return_exceptions=True
+                    )
+                    for client, exc in zip(clients, excs):
+                        if exc and client in info["clients"]:
+                            info["clients"].remove(client)
+
+                await topic_iterable.aclose()
+        finally:
+            self._subscriber_info.pop(topic, None)
+            await asyncio.gather(*(c.close() for c in info["clients"]), return_exceptions=True)
 
     async def live_data_websocket_handler(self, ws: AdminTableWebsocket.Websocket) -> None:
         topic = ws.query_params["topic"]
 
         # if this is the first topic subscriber, create the topic production task
-        if topic not in self._live_data_topics:
-            task = asyncio.Task(self.live_data_topic_task(topic))
-            self._live_data_topics[topic] = {
+        if topic not in self._subscriber_info:
+            task = asyncio.create_task(self.live_data_topic_task(topic))
+            self._subscriber_info[topic] = {
                 "task": task,
                 "clients": [ws],
             }
         else:
-            self._live_data_topics[topic]["clients"].append(ws)
+            self._subscriber_info[topic]["clients"].append(ws)
 
+        # loop forever, until client disconnects (raises ConnectionClosed)
         while True:
             msg = await ws.receive_json()
             print(f'received message "{msg}" on ws: {ws.url.path}. There should be no messages here', file=sys.stderr)
 
     async def live_data_websocket_disconnect(self, ws: AdminTableWebsocket.Websocket):
         topic = ws.query_params["topic"]
-        if tpc := self._live_data_topics.get(topic):
-            tpc["clients"].remove(ws)
+        if tpc := self._subscriber_info.get(topic):
+            tpc["clients"].remove(ws) if ws in tpc["clients"] else None
 
     @property
-    def websockets(self) -> List[AdminTableWebsocket]:
+    def websockets(self) -> list[AdminTableWebsocket]:
         return [
             AdminTableWebsocket(
                 path="/ws/live_data",
@@ -681,7 +690,7 @@ class AdminTable(ListViewMixin, _HasConfig):
 
     @AuthRouteMixin.protected
     def navigation_handler(self, r: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
-        href_base = f"{r.url.scheme}://{r.url.host}:{r.url.port}{r.url.path.removesuffix('/navigation')}"
+        href_base = f"{r.url.scheme}://{r.url.host}:{r.url.port}{(r.url.path or '').removesuffix('/navigation')}"
 
         # TODO allow for custom drawer ordering
         drawers = []
@@ -696,7 +705,7 @@ class AdminTable(ListViewMixin, _HasConfig):
                 "navigation": [
                     {
                         "name": drawer,
-                        "icon": self.config.navigation_icons.get(drawer, "x"),
+                        "icon": self.config.navigation_icons.get(drawer or "", "x") or "x",
                         "links": [
                             {
                                 "name": resource.name,
@@ -1081,13 +1090,13 @@ class AdminTable(ListViewMixin, _HasConfig):
                 content_type="application/json",
             )
 
-        if isinstance(callback_ret, RedirectPage):  # noqa: F821
+        if isinstance(callback_ret, RedirectCustomPage):
             return AdminTableRoute.RouteResponse(
                 body={
                     "message": callback_ret.message or "Success",
                     "redirect": {
                         "type": "page",
-                        "page": callback_ret.page,
+                        "page": callback_ret.page_name,
                     },
                 },
                 content_type="application/json",

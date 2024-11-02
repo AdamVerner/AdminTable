@@ -1,18 +1,17 @@
 import abc
 import dataclasses
 import random
+from collections.abc import Callable
 from datetime import datetime
+from types import TracebackType
 from typing import (
     TYPE_CHECKING,
+    Annotated,
     Any,
-    Awaitable,
-    Callable,
     Generic,
-    List,
+    Literal,
     Optional,
     Protocol,
-    Tuple,
-    Type,
     TypeAlias,
     TypedDict,
     TypeVar,
@@ -21,7 +20,7 @@ from typing import (
 from pydantic import BaseModel
 from sqlalchemy import Column
 from sqlalchemy.orm import InstrumentedAttribute
-from typing_extensions import Annotated, Doc, Literal
+from typing_extensions import Doc
 
 if TYPE_CHECKING:
     from admin_table.modules.bases.resolver import ResolverBase
@@ -100,13 +99,13 @@ class AdminTableConfig:
     dashboard: Annotated[
         Callable[[DefaultAuthProvider.User], str], Doc("Function generating the dashboard content")
     ] = dataclasses.field(default=lambda u: f"# Dashboard\n\nWelcome {u.email} to AdminTable")
-    resources: List["Resource"] = dataclasses.field(default_factory=list)
-    pages: List["Page"] = dataclasses.field(default_factory=list)
+    resources: list["Resource"] = dataclasses.field(default_factory=list)
+    pages: list["Page"] = dataclasses.field(default_factory=list)
     navigation_icons: Annotated[
         dict[str, NavigationIcon], Doc("Icons which should be displayed alongside the navigation links")
     ] = dataclasses.field(default_factory=dict)
     input_forms: Annotated[
-        List["InputForm"],
+        list["InputForm"],
         Doc(
             "List of all forms which can be used through the application."
             "Each form will be available on ~/forms/<form_name>."
@@ -114,7 +113,7 @@ class AdminTableConfig:
         ),
     ] = dataclasses.field(default_factory=list)
     live_data_manager: Annotated[
-        Optional[Type["LiveDataManagerBase"]], Doc("Live data manager to be used for live data updates")
+        type["LiveDataManagerBase"] | None, Doc("Live data manager to be used for live data updates")
     ] = None
 
 
@@ -122,14 +121,14 @@ class AdminTableConfig:
 class Navigable:
     name: Annotated[str, Doc("Unique name of the resource")]
     navigation: Annotated[
-        Optional[str],
+        str | None,
         Doc(
             """
             Navigation drawer name. If not specified, resource will not be displayed in the navigation drawer.
             """
         ),
     ]
-    display: Annotated[Optional[str], Doc("Name which will be displayed in the UI, defaults to name")] = None
+    display: Annotated[str | None, Doc("Name which will be displayed in the UI, defaults to name")] = None
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -158,7 +157,7 @@ class ResourceViews:
 
 @dataclasses.dataclass
 class ViewBase:
-    title: Annotated[Optional[str], Doc("Title of the view")] = None
+    title: Annotated[str | None, Doc("Title of the view")] = None
     description: Annotated[
         Callable[..., str] | str | None,
         Doc("Function generating description of the resource or the description itself"),
@@ -221,7 +220,7 @@ Type for field definitions
   - [str, LinkEntity]: column name, link to another entity
   - [str, LinkTable]: column name, link to another table
   - [str, str, str]: same as two-tuples, but with second item being a description
-  
+
 if the value starts with prefix [[markdown]] or [[html]] it will be rendered as such...
 """
 ResolvableFieldType = str | Column | InstrumentedAttribute | Callable[[Any], Any] | LinkDetail | LinkTable | LiveValue
@@ -231,18 +230,18 @@ ListViewFieldType = (
     str
     | Column
     | InstrumentedAttribute
-    | Tuple[FieldName, ResolvableFieldType]
-    | Tuple[FieldName, FieldDescription, ResolvableFieldType]
+    | tuple[FieldName, ResolvableFieldType]
+    | tuple[FieldName, FieldDescription, ResolvableFieldType]
 )
 
 
 @dataclasses.dataclass(kw_only=True)
 class ListView(ViewBase):
     fields: Annotated[list[ListViewFieldType], Doc("List of fields to be selected from the model")]
-    detail_value_ref: Annotated[Optional[str], Doc("Column to be used as the detail value")] = None
+    detail_value_ref: Annotated[str | None, Doc("Column to be used as the detail value")] = None
 
     default_sort: Annotated[
-        Tuple[str, str],
+        tuple[str | None, str],
         Doc(
             "Default sorting column and direction. Column name is used to resolve the column from the model."
             "Direction is either 'asc' or 'desc', if no value is provided, the detail ref is used as default."
@@ -250,14 +249,14 @@ class ListView(ViewBase):
     ] = (None, "asc")
 
     hidden_filters: Annotated[
-        Optional[list["ResolverBase.AppliedFilter"]],
+        list["ResolverBase.AppliedFilter"] | None,
         Doc(
             "Always-on set of filter which will NOT be displayed to the user."
             "These filters are not passed to the filter_processor and are applied directly to the query."
         ),
     ] = None
     filter_processor: Annotated[
-        Optional[Callable[["ResolverBase.AppliedFilter"], "ResolverBase.AppliedFilter"]],
+        Callable[["ResolverBase.AppliedFilter"], "ResolverBase.AppliedFilter"] | None,
         Doc("Function processing the filter before passing it to the resolver"),
     ] = None
 
@@ -266,12 +265,12 @@ CreateSchemaModel = TypeVar("CreateSchemaModel", bound=BaseModel)
 
 
 class CallbackReturnDict(TypedDict):
-    id: Optional[str]
+    id: str | None
 
 
 @dataclasses.dataclass()
 class HandlerAction(abc.ABC):
-    message: Optional[str] = None
+    message: str | None = None
 
 
 @dataclasses.dataclass()
@@ -289,7 +288,7 @@ class RedirectDetail(HandlerAction):
 class RedirectList(HandlerAction):
     resource: str
     filters: list["ResolverBase.AppliedFilter"] = dataclasses.field(default_factory=list)
-    sort: Optional[Tuple[str, str]] = None
+    sort: tuple[str, str] | None = None
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -380,7 +379,7 @@ class GetGraphCallback(Protocol):
     __name__: str
 
     def __call__(
-        self, __model: Any, range_from: Optional[datetime] = None, range_to: Optional[datetime] = None
+        self, __model: Any, range_from: datetime | None = None, range_to: datetime | None = None
     ) -> GraphData: ...
 
 
@@ -388,7 +387,7 @@ class GetGraphCallback(Protocol):
 class DetailView(ViewBase):
     fields: Annotated[list[ListViewFieldType], Doc("List of fields to be selected from the model")]
     actions: Annotated[
-        List[Callable[..., GenericCallbackReturnValue]],
+        list[Callable[..., GenericCallbackReturnValue]],
         Doc(
             "List of actions to be added to the view."
             "Name and description of the action is taken from the functions __name__ and __doc__"
@@ -396,14 +395,14 @@ class DetailView(ViewBase):
         ),
     ] = dataclasses.field(default_factory=list)
     tables: Annotated[
-        List[SubTable],
+        list[SubTable],
         Doc(
             "List of tables to be added to the view."
             "The 'ref' is used as title name of the table instead of the resource name."
         ),
     ] = dataclasses.field(default_factory=list)
     graphs: Annotated[
-        List[GetGraphCallback],
+        list[GetGraphCallback],
         Doc(
             "List of graphs to be added to the view."
             "Name and description of the graph is taken from the functions __name__ and __doc__"
@@ -423,7 +422,11 @@ class InputForm:
 
 
 class LiveDataManagerBase(abc.ABC):
-    """Base class for live-data manager"""
+    """
+    Base class for live-data manager
+    Creation of the manager is de-duplicated by the application
+    It is safe to assume that there are never two instances with same topic used.
+    """
 
     @dataclasses.dataclass
     class DataEvent:
@@ -432,12 +435,14 @@ class LiveDataManagerBase(abc.ABC):
     topic: str
     produce: bool = True
 
-    class PushDataCallable(Protocol):
-        def __call__(self, data: int | str, metadata: dict[str, Any] = None) -> Awaitable[None]: ...
-
     @abc.abstractmethod
     def __init__(self, topic: str):
         self.topic = topic
 
     @abc.abstractmethod
-    async def produce_data(self) -> DataEvent: ...
+    async def __aenter__(self): ...
+
+    @abc.abstractmethod
+    async def __aexit__(
+        self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType
+    ) -> bool | None: ...

@@ -3,8 +3,9 @@
 set -e
 set -x
 
-# check python code style
+# check python code style and types
 ruff check
+mypy admin_table
 
 # build ui
 cd ui

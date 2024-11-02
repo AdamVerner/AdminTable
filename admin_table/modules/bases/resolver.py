@@ -1,6 +1,6 @@
 import abc
 import dataclasses
-from typing import TYPE_CHECKING, Annotated, List, Literal, Tuple, TypeAlias
+from typing import TYPE_CHECKING, Annotated, Literal, TypeAlias
 
 from typing_extensions import Doc
 
@@ -29,8 +29,8 @@ class ResolverBase(abc.ABC):
         resource: "Resource",
         page: int,
         per_page: int,
-        filters: List[AppliedFilter],
-        sort: Tuple[str, Literal["asc", "desc"]],
+        filters: list[AppliedFilter],
+        sort: tuple[str, Literal["asc", "desc"]],
     ) -> ResolvedListData:
         raise NotImplementedError()
 

@@ -1,7 +1,8 @@
 import sys
 import traceback
+from collections.abc import Awaitable
 from datetime import datetime
-from typing import Any, Awaitable
+from typing import Any
 
 from fastapi import Body, FastAPI, Request
 from fastapi.encoders import jsonable_encoder
@@ -80,7 +81,7 @@ class FastAPIWrapper(BaseWrapper):
         self.fa.add_api_route(route.path, callback, methods=[route.method], name=route.name)
 
     def register_websocket_callback(self, websocket: AdminTableWebsocket) -> None:
-        async def handler(ws: WebSocket):
+        async def handler(ws: WebSocket) -> None:
             ws_wrap = AdminTableWebsocket.Websocket(
                 url=URL(
                     scheme=ws.url.scheme,
@@ -107,10 +108,10 @@ class FastAPIWrapper(BaseWrapper):
             except Exception as e:
                 if websocket.onerror:
                     await websocket.onerror(ws_wrap, e)
-                else:
-                    print(f"Websocket error: {repr(e)}", file=sys.stderr)
+                raise
             finally:
-                websocket.finish and await websocket.finish(ws_wrap)
+                if websocket.finish:
+                    await websocket.finish(ws_wrap)
 
         self.fa.add_websocket_route(websocket.path, handler, websocket.name)
 

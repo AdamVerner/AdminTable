@@ -1,6 +1,7 @@
 import ast
 import dataclasses
-from typing import Any, Callable, Generator, List, Literal, Optional, Tuple, Type, Union
+from collections.abc import Callable, Generator
+from typing import Annotated, Any, Literal
 
 import sqlalchemy.exc
 from sqlalchemy import BinaryExpression, ColumnElement, select
@@ -14,21 +15,21 @@ from sqlalchemy.orm import (
 )
 from sqlalchemy.orm.instrumentation import manager_of_class
 from sqlalchemy.sql.functions import count
-from typing_extensions import Annotated, Doc
+from typing_extensions import Doc
 
 from admin_table.config import Resource
 from admin_table.modules.bases import ResolvedData, ResolverBase
 
-SQLAlchemyListView_FieldType = Union[str, InstrumentedAttribute, Query, ColumnElement]
+SQLAlchemyListView_FieldType = str | InstrumentedAttribute | Query | ColumnElement
 
 
 class SQLAlchemyResolver(ResolverBase):
     def __init__(
         self,
         session: Annotated[Callable[[], Session], Doc("Function called at runtime which should provide a session")],
-        model: Annotated[Type[DeclarativeBase], Doc("Base model from which the attributes will be selected")],
+        model: Annotated[type[DeclarativeBase], Doc("Base model from which the attributes will be selected")],
         extra_cols: Annotated[
-            Optional[dict[str, Callable[[Any], str] | Query | ColumnElement]],
+            dict[str, Callable[[Any], str] | Query | ColumnElement] | None,
             Doc("Extra columns to be added to the list view"),
         ] = None,
     ):
@@ -61,7 +62,7 @@ class SQLAlchemyResolver(ResolverBase):
 
         # parse additional columns provided by the user
         for name, column in self.extra_cols.items():
-            if isinstance(column, (Query, ColumnElement)):
+            if isinstance(column, Query | ColumnElement):
                 all_columns[name] = self.__ListColumns(ref=name, src=column.label(name), sortable=False)
 
         assert all_columns, "No columns found in the model"
@@ -71,7 +72,7 @@ class SQLAlchemyResolver(ResolverBase):
 
     @staticmethod
     def __generate_filter_expression(
-        attributes: dict[str, __ListColumns], filters: List[ResolverBase.AppliedFilter]
+        attributes: dict[str, __ListColumns], filters: list[ResolverBase.AppliedFilter]
     ) -> Generator[BinaryExpression, None, None]:
         for f in filters:
             sql_column = attributes[f.ref].src
@@ -87,7 +88,7 @@ class SQLAlchemyResolver(ResolverBase):
             # convert value to the correct type
             if f.op == "in":
                 value = ast.literal_eval(f.val or "[]")
-                assert isinstance(value, (list, tuple)), f'Invalid value type "{value}", must be List'
+                assert isinstance(value, list | tuple), f'Invalid value type "{value}", must be List'
                 value = [sql_column.expression.type.python_type(x) for x in value]
             else:
                 value = sql_column.expression.type.python_type(f.val)
@@ -109,8 +110,8 @@ class SQLAlchemyResolver(ResolverBase):
         resource: "Resource",
         page: int,
         per_page: int,
-        filters: List[ResolverBase.AppliedFilter],
-        sort: Tuple[str, Literal["asc", "desc"]],
+        filters: list[ResolverBase.AppliedFilter],
+        sort: tuple[str, Literal["asc", "desc"]],
     ) -> ResolverBase.ResolvedListData:
         attributes = self.__resolve_model_attributes(resource)
 

@@ -3,9 +3,10 @@ import base64
 import json
 import os.path
 import random
+from collections.abc import AsyncIterable
 from datetime import datetime, timedelta
 from random import randrange
-from typing import Annotated, AsyncIterable, Optional
+from typing import Annotated
 
 import uvicorn
 from base import Base, SessionLocal, engine
@@ -82,7 +83,7 @@ def create_item(user: User, title: str, description: str, public: bool = False) 
 
 
 def random_graph_data(
-    user: User, range_from: Optional[datetime] = None, range_to: Optional[datetime] = None
+    user: User, range_from: datetime | None = None, range_to: datetime | None = None
 ) -> LineGraphData:
     range_from = range_from or (datetime.now() - timedelta(days=10))
     range_to = range_to or datetime.now()
