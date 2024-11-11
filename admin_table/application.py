@@ -19,7 +19,6 @@ from .config import (
     DefaultAuthProvider,
     DetailView,
     GetGraphCallback,
-    GraphData,
     InputForm,
     LinkDetail,
     LinkTable,
@@ -101,7 +100,7 @@ class AdminTableRoute:
 
     path: str
     name: str
-    handler: Callable[[RouteRequest], RouteResponse | dict | str]
+    handler: Callable[[RouteRequest], Awaitable[RouteResponse | dict | str]]
     method: str = "GET"
     public: bool = False
     content_type: str | None = None
@@ -154,7 +153,7 @@ class _HasConfig:
 
 class AuthRouteMixin(_HasConfig):
     @staticmethod
-    def user_from_header(
+    async def user_from_header(
         admin_table: "AdminTable", headers: dict[str, str]
     ) -> AdminTableRoute.RouteResponse | DefaultAuthProvider.User:
         # check if bearer is passed in websocket protocol
@@ -171,7 +170,11 @@ class AuthRouteMixin(_HasConfig):
             )
 
         token = authorization.removeprefix("Bearer ")
-        if not (user := admin_table.config.auth_provider.validate_token(token)):
+        if asyncio.iscoroutinefunction(validate_token := admin_table.config.auth_provider.validate_token):
+            user = await validate_token(token)
+        else:
+            user = validate_token(token)
+        if not user:
             return AdminTableRoute.RouteResponse(
                 status_code=401,
                 body={"message": "Unauthorized"},
@@ -181,10 +184,10 @@ class AuthRouteMixin(_HasConfig):
         return user
 
     @staticmethod
-    def check_request(
+    async def check_request(
         admin_table: "AdminTable", request: AdminTableRoute.RouteRequest
     ) -> AdminTableRoute.RouteResponse | None:
-        r = AuthRouteMixin.user_from_header(admin_table, request.headers)
+        r = await AuthRouteMixin.user_from_header(admin_table, request.headers)
         if isinstance(r, AdminTableRoute.RouteResponse):
             return r
         request.user = r
@@ -192,13 +195,16 @@ class AuthRouteMixin(_HasConfig):
 
     @staticmethod
     def protected(
-        handler: Callable[["AdminTable", AdminTableRoute.RouteRequest], AdminTableRoute.RouteResponse],
-    ) -> Callable[["AdminTable", AdminTableRoute.RouteRequest], AdminTableRoute.RouteResponse]:
-        def wrapped(admin_table: "AdminTable", request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
-            if (response := AuthRouteMixin.check_request(admin_table, request)) is not None:
+        handler: Callable[["AdminTable", AdminTableRoute.RouteRequest], Awaitable[AdminTableRoute.RouteResponse]],
+    ) -> Callable[["AdminTable", AdminTableRoute.RouteRequest], Awaitable[AdminTableRoute.RouteResponse]]:
+        async def wrapped(
+            admin_table: "AdminTable", request: AdminTableRoute.RouteRequest
+        ) -> AdminTableRoute.RouteResponse:
+            response = await AuthRouteMixin.check_request(admin_table, request)
+            if response is not None:
                 return response
 
-            result = handler(admin_table, request)
+            result = await handler(admin_table, request)
             return result
 
         return wrapped
@@ -211,10 +217,10 @@ class _Column:
         self.sortable = sortable
         self.description = description
 
-    def value(self, row):
+    async def value(self, row):
         return row[self.ref]
 
-    def head(self, current_sort: tuple[str, Literal["asc", "desc"]] | None = None):
+    async def head(self, current_sort: tuple[str, Literal["asc", "desc"]] | None = None):
         sort = None
         if current_sort:
             sort = current_sort[1] if current_sort[0] == self.ref else None
@@ -233,7 +239,7 @@ class _LinkDetailColumn(_Column):
         self.resource = resource
         self.id_ref = id_ref
 
-    def value(self, row):
+    async def value(self, row):
         return {
             "type": "link",
             "kind": "detail",
@@ -252,7 +258,7 @@ class _LinkTableColumn(_Column):
         self.filter_op = filter_op
         self.filter_ref = filter_ref
 
-    def value(self, row):
+    async def value(self, row):
         return {
             "type": "link",
             "kind": "table",
@@ -265,13 +271,16 @@ class _LinkTableColumn(_Column):
 
 
 class _ComputedColumn(_Column):
-    def __init__(self, handler, **kwargs):
+    def __init__(self, handler: Callable[[Any], str | Any | Awaitable[str | Any]], **kwargs):
         super().__init__(**kwargs)
         self.handler = handler
 
-    def value(self, row):
+    async def value(self, row):
         try:
-            value = self.handler(row)
+            if asyncio.iscoroutinefunction(self.handler):
+                value = await self.handler(row)
+            else:
+                value = self.handler(row)
         except Exception as e:
             print(f"Failed computing {self}: {e}", file=sys.stderr)
             value = "# ERROR #"
@@ -290,7 +299,7 @@ class _LiveValueColumn(_Column):
         self.history = history
         super().__init__(**kwargs)
 
-    def value(self, row):
+    async def value(self, row):
         return {
             "type": "live",
             "initial": row[self.initial_value_ref] if self.initial_value_ref else None,
@@ -377,7 +386,7 @@ def field_resolver(fields):
 
 class ListViewMixin(AuthRouteMixin, _HasConfig):
     @AuthRouteMixin.protected
-    def resource_list_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+    async def resource_list_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         resource = self.get_resource(request.path_params["resource"])
         view = self.get_view_list(resource)
 
@@ -418,22 +427,31 @@ class ListViewMixin(AuthRouteMixin, _HasConfig):
             )
         header.extend(field_resolver(view.fields))
 
-        data = resource.resolver.resolve_list(
-            resource,
-            current_page,
-            current_per_page,
-            current_filters + (view.hidden_filters or []),
-            current_sort,
-        )
+        if asyncio.iscoroutinefunction(resource.resolver.resolve_list):
+            data = await resource.resolver.resolve_list(
+                resource,
+                current_page,
+                current_per_page,
+                current_filters + (view.hidden_filters or []),
+                current_sort,
+            )
+        else:
+            data = resource.resolver.resolve_list(
+                resource,
+                current_page,
+                current_per_page,
+                current_filters + (view.hidden_filters or []),
+                current_sort,
+            )
 
         # ##### PROCESS DATA INTO COLUMN FORMAT
-        rows = [[h.value(row) for h in header] for row in data.list_data]
+        rows = [[await h.value(row) for h in header] for row in data.list_data]
 
         # ##### RESPONSE GENERATION
 
         body = {
             "data": rows,
-            "header": [h.head(current_sort) for h in header],
+            "header": [await h.head(current_sort) for h in header],
             "meta": {
                 "title": title,
                 "description": description,
@@ -575,7 +593,7 @@ class AdminTable(ListViewMixin, _HasConfig):
         ]
 
     async def live_data_websocket_accept(self, ws: AdminTableWebsocket.Websocket):
-        r = AdminTable.user_from_header(self, ws.headers)
+        r = await AdminTable.user_from_header(self, ws.headers)
         if isinstance(r, AdminTableRoute.RouteResponse):
             if isinstance(r.body, str):
                 await ws.close(401, r.body)
@@ -653,23 +671,30 @@ class AdminTable(ListViewMixin, _HasConfig):
         ]
 
     @AuthRouteMixin.protected
-    def user_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+    async def user_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         return AdminTableRoute.RouteResponse(
             body={"user": dataclasses.asdict(request.user) if request.user else None},
             content_type="application/json",
         )
 
     @AuthRouteMixin.protected
-    def ping_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+    async def ping_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         return AdminTableRoute.RouteResponse(
             body={"message": "pong", "user": dataclasses.asdict(request.user) if request.user else None},
             content_type="application/json",
         )
 
-    def login_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+    async def login_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         assert self.config.auth_provider is not None, "No auth provider configured"
         try:
-            user = self.config.auth_provider.authenticate(request.body.get("username"), request.body.get("password"))
+            if asyncio.iscoroutinefunction(self.config.auth_provider.authenticate):
+                user = await self.config.auth_provider.authenticate(
+                    request.body.get("username"), request.body.get("password")
+                )
+            else:
+                user = self.config.auth_provider.authenticate(
+                    request.body.get("username"), request.body.get("password")
+                )
         except Exception as e:
             return AdminTableRoute.RouteResponse(
                 status_code=500,
@@ -677,7 +702,11 @@ class AdminTable(ListViewMixin, _HasConfig):
                 content_type="application/json",
             )
         if isinstance(user, self.config.auth_provider.User):
-            token = self.config.auth_provider.generate_token(user)
+            if asyncio.iscoroutinefunction(self.config.auth_provider.generate_token):
+                token = await self.config.auth_provider.generate_token(user)
+            else:
+                token = self.config.auth_provider.generate_token(user)
+
             return AdminTableRoute.RouteResponse(
                 body={"message": "login successful", "token": token},
                 content_type="application/json",
@@ -689,7 +718,7 @@ class AdminTable(ListViewMixin, _HasConfig):
         )
 
     @AuthRouteMixin.protected
-    def navigation_handler(self, r: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+    async def navigation_handler(self, r: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         href_base = f"{r.url.scheme}://{r.url.host}:{r.url.port}{(r.url.path or '').removesuffix('/navigation')}"
 
         # TODO allow for custom drawer ordering
@@ -733,11 +762,12 @@ class AdminTable(ListViewMixin, _HasConfig):
             content_type="application/json",
         )
 
-    def page_view_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+    async def page_view_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         page = self.get_page(request.path_params["page_name"])
 
         # check request authentication for non-public forms
-        if not page.public and (response := AuthRouteMixin.check_request(self, request)) is not None:
+        response = await AuthRouteMixin.check_request(self, request)
+        if not page.public and response is not None:
             return response
 
         return AdminTableRoute.RouteResponse(
@@ -751,7 +781,7 @@ class AdminTable(ListViewMixin, _HasConfig):
         )
 
     @AuthRouteMixin.protected
-    def resource_create_get_schema_handler(
+    async def resource_create_get_schema_handler(
         self, request: AdminTableRoute.RouteRequest
     ) -> AdminTableRoute.RouteResponse:
         resource = self.get_resource(request.path_params["resource"])
@@ -765,13 +795,17 @@ class AdminTable(ListViewMixin, _HasConfig):
         )
 
     @AuthRouteMixin.protected
-    def resource_create_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+    async def resource_create_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         resource = self.get_resource(request.path_params["resource"])
         view = self.get_view_create(resource)
 
         try:
             data = view.schema(**request.body)
-            callback_ret = view.callback(data)
+            if asyncio.iscoroutinefunction(view.callback):
+                callback_ret = await view.callback(data)
+            else:
+                callback_ret = view.callback(data)
+
         except Exception as e:
             return AdminTableRoute.RouteResponse(
                 status_code=200,
@@ -779,14 +813,17 @@ class AdminTable(ListViewMixin, _HasConfig):
                 content_type="application/json",
             )
 
-        return self.process_handler_return(callback_ret, current_resource=resource)
+        return await self.process_handler_return(callback_ret, current_resource=resource)
 
     @AuthRouteMixin.protected
-    def resource_detail_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+    async def resource_detail_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         resource = self.get_resource(request.path_params["resource"])
         detail = self.get_view_detail(resource)
 
-        entry = resource.resolver.resolve_detail(resource, request.path_params["detail_id"])
+        if asyncio.iscoroutinefunction(resolve_detail := resource.resolver.resolve_detail):
+            entry = await resolve_detail(resource, request.path_params["detail_id"])
+        else:
+            entry = resolve_detail(resource, request.path_params["detail_id"])
 
         if entry is None:
             return AdminTableRoute.RouteResponse(
@@ -795,7 +832,7 @@ class AdminTable(ListViewMixin, _HasConfig):
                 content_type="application/json",
             )
 
-        fields = [(field.head(None), field.value(entry)) for field in field_resolver(detail.fields)]
+        fields = [(await field.head(None), await field.value(entry)) for field in field_resolver(detail.fields)]
 
         title_template = string.Template(detail.title or resource.display or resource.name)
         title = title_template.safe_substitute(entry)
@@ -879,7 +916,7 @@ class AdminTable(ListViewMixin, _HasConfig):
             content_type="application/json",
         )
 
-    def resource_graph_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+    async def resource_graph_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         resource = self.get_resource(request.path_params["resource"])
         detail = self.get_view_detail(resource)
         data_function: GetGraphCallback | None = next(
@@ -892,7 +929,11 @@ class AdminTable(ListViewMixin, _HasConfig):
                 body={"message": f"Graph {request.path_params['graph_ref']} not found"},
                 content_type="application/json",
             )
-        entry = resource.resolver.resolve_detail(resource, request.path_params["detail_id"])
+        detail_id = request.path_params["detail_id"]
+        if asyncio.iscoroutinefunction(resolve_detail := resource.resolver.resolve_detail):
+            entry = await resolve_detail(resource, detail_id)
+        else:
+            entry = resolve_detail(resource, detail_id)
 
         if entry is None:
             return AdminTableRoute.RouteResponse(
@@ -917,7 +958,10 @@ class AdminTable(ListViewMixin, _HasConfig):
             range_from = range_to = None
 
         try:
-            graph_data: GraphData = data_function(entry, range_from=range_from, range_to=range_to)
+            if asyncio.iscoroutinefunction(data_function):
+                graph_data = await data_function(entry, range_from=range_from, range_to=range_to)
+            else:
+                graph_data = data_function(entry, range_from=range_from, range_to=range_to)
         except Exception as e:
             logging.exception("Failed getting graph data")
             return AdminTableRoute.RouteResponse(
@@ -932,7 +976,9 @@ class AdminTable(ListViewMixin, _HasConfig):
         )
 
     @AuthRouteMixin.protected
-    def resource_action_call_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+    async def resource_action_call_handler(
+        self, request: AdminTableRoute.RouteRequest
+    ) -> AdminTableRoute.RouteResponse:
         resource = self.get_resource(request.path_params["resource"])
         detail = self.get_view_detail(resource)
 
@@ -944,6 +990,7 @@ class AdminTable(ListViewMixin, _HasConfig):
                 content_type="application/json",
             )
         entry = resource.resolver.resolve_detail(resource, request.path_params["detail_id"])
+
         if entry is None:
             return AdminTableRoute.RouteResponse(
                 status_code=404,
@@ -956,8 +1003,11 @@ class AdminTable(ListViewMixin, _HasConfig):
         params = {**raw_params}
 
         try:
-            ret = action(entry, **params)
-            return self.process_handler_return(ret)
+            if asyncio.iscoroutinefunction(action):
+                ret = await action(entry, **params)
+            else:
+                ret = action(entry, **params)
+            return await self.process_handler_return(ret)
         except Exception as e:
             logging.exception(f"Failed calling action: {e}")
             return AdminTableRoute.RouteResponse(
@@ -967,7 +1017,7 @@ class AdminTable(ListViewMixin, _HasConfig):
             )
 
     @AuthRouteMixin.protected
-    def dashboard_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+    async def dashboard_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         if not request.user:
             return AdminTableRoute.RouteResponse(
                 status_code=401,
@@ -975,7 +1025,10 @@ class AdminTable(ListViewMixin, _HasConfig):
                 content_type="application/json",
             )
         try:
-            content = self.config.dashboard(request.user)
+            if asyncio.iscoroutinefunction(self.config.dashboard):
+                content = await self.config.dashboard(request.user)
+            else:
+                content = self.config.dashboard(request.user)
             return AdminTableRoute.RouteResponse(
                 body={"content": content},
                 content_type="application/json",
@@ -987,11 +1040,12 @@ class AdminTable(ListViewMixin, _HasConfig):
                 content_type="application/json",
             )
 
-    def get_input_form_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+    async def get_input_form_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         form = self.get_input_form(request.path_params["location"])
 
         # check request authentication for non-public forms
-        if not form.public and (response := AuthRouteMixin.check_request(self, request)) is not None:
+        response = await AuthRouteMixin.check_request(self, request)
+        if not form.public and response is not None:
             return response
 
         description = form.description() if callable(form.description) else form.description
@@ -1007,17 +1061,21 @@ class AdminTable(ListViewMixin, _HasConfig):
             content_type="application/json",
         )
 
-    def submit_input_form_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+    async def submit_input_form_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         form = self.get_input_form(request.path_params["location"])
 
         # check request authentication for non-public forms
-        if not form.public and (response := AuthRouteMixin.check_request(self, request)) is not None:
+        response = await AuthRouteMixin.check_request(self, request)
+        if not form.public and response is not None:
             return response
 
         try:
             data = form.schema(**request.body)
-            callback_ret = form.callback(data)
-            return self.process_handler_return(callback_ret)
+            if asyncio.iscoroutinefunction(form.callback):
+                callback_ret = await form.callback(data)
+            else:
+                callback_ret = form.callback(data)
+            return await self.process_handler_return(callback_ret)
         except Exception as e:
             return AdminTableRoute.RouteResponse(
                 status_code=500,
@@ -1025,7 +1083,14 @@ class AdminTable(ListViewMixin, _HasConfig):
                 content_type="application/json",
             )
 
-    def default_handler(self, request: AdminTableRoute.RouteRequest, fallback=True) -> AdminTableRoute.RouteResponse:
+    # actual
+    # Callable[[RouteRequest, Any], Coroutine[Any, Any, RouteResponse]]
+    # expected
+    # Coroutine[Any, Any, Callable[[RouteRequest], Awaitable[RouteResponse | dict[Any, Any] | str]]]
+
+    async def default_handler(
+        self, request: AdminTableRoute.RouteRequest, fallback=True
+    ) -> AdminTableRoute.RouteResponse:
         p = os.path.abspath(os.path.join(os.path.dirname(__file__), "ui/", request.path_params["path"] or "index.html"))
         try:
             with open(p) as f:
@@ -1039,7 +1104,7 @@ class AdminTable(ListViewMixin, _HasConfig):
                 )
         except FileNotFoundError:
             if fallback:
-                return self.default_handler(
+                return await self.default_handler(
                     AdminTableRoute.RouteRequest(url=request.url, path_params={"path": ""}), fallback=False
                 )
             return AdminTableRoute.RouteResponse(
@@ -1047,7 +1112,7 @@ class AdminTable(ListViewMixin, _HasConfig):
                 body="Not Found",
             )
 
-    def process_handler_return(
+    async def process_handler_return(
         self, callback_ret: Any, current_resource: Resource | None = None
     ) -> AdminTableRoute.RouteResponse:
         if isinstance(callback_ret, RefreshView):
@@ -1110,11 +1175,13 @@ class AdminTable(ListViewMixin, _HasConfig):
 
         if current_resource:
             if isinstance(callback_ret, dict) and "id" in callback_ret and current_resource:
-                return self.process_handler_return(
+                return await self.process_handler_return(
                     RedirectDetail(resource=current_resource.name, id=callback_ret["id"])
                 )
             if hasattr(callback_ret, "id") and current_resource:
-                return self.process_handler_return(RedirectDetail(resource=current_resource.name, id=callback_ret.id))
+                return await self.process_handler_return(
+                    RedirectDetail(resource=current_resource.name, id=callback_ret.id)
+                )
 
         if callback_ret is None:
             return AdminTableRoute.RouteResponse(

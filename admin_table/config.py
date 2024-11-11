@@ -1,7 +1,7 @@
 import abc
 import dataclasses
 import random
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from types import TracebackType
 from typing import (
@@ -26,7 +26,15 @@ if TYPE_CHECKING:
     from admin_table.modules.bases.resolver import ResolverBase
 
 
-class DefaultAuthProvider:
+class AuthProviderType(Protocol):
+    User: type[Any]
+
+    authenticate: Callable[[str | None, str | None], Any | Awaitable[Any]]
+    generate_token: Callable[[Any], str | Awaitable[str]]
+    validate_token: Callable[[str], Any | Awaitable[Any]]
+
+
+class DefaultAuthProvider(AuthProviderType):
     @dataclasses.dataclass
     class User:
         email: str
@@ -95,9 +103,9 @@ class AdminTableConfig:
     name: Annotated[str, Doc("The name of the AdminTable")] = "AdminTable"
     icon_src: Annotated[str | None, Doc("Icon to be displayed in the navigation drawer")] = None
     version: Annotated[str | None, Doc("Current version of your application")] = None
-    auth_provider: DefaultAuthProvider = dataclasses.field(default_factory=DefaultAuthProvider)
+    auth_provider: AuthProviderType = dataclasses.field(default_factory=DefaultAuthProvider)
     dashboard: Annotated[
-        Callable[[DefaultAuthProvider.User], str], Doc("Function generating the dashboard content")
+        Callable[[DefaultAuthProvider.User], str | Awaitable[str]], Doc("Function generating the dashboard content")
     ] = dataclasses.field(default=lambda u: f"# Dashboard\n\nWelcome {u.email} to AdminTable")
     resources: list["Resource"] = dataclasses.field(default_factory=list)
     pages: list["Page"] = dataclasses.field(default_factory=list)
@@ -302,7 +310,7 @@ GenericCallbackReturnValue = None | str | HandlerAction | CallbackReturnDict
 @dataclasses.dataclass(kw_only=True)
 class CreateView(ViewBase, Generic[CreateSchemaModel]):
     schema: type[CreateSchemaModel]
-    callback: Callable[[CreateSchemaModel], GenericCallbackReturnValue]
+    callback: Callable[[CreateSchemaModel], GenericCallbackReturnValue | Awaitable[GenericCallbackReturnValue]]
 
 
 @dataclasses.dataclass
@@ -380,14 +388,14 @@ class GetGraphCallback(Protocol):
 
     def __call__(
         self, __model: Any, range_from: datetime | None = None, range_to: datetime | None = None
-    ) -> GraphData: ...
+    ) -> GraphData | Awaitable[GraphData]: ...
 
 
 @dataclasses.dataclass(kw_only=True)
 class DetailView(ViewBase):
     fields: Annotated[list[ListViewFieldType], Doc("List of fields to be selected from the model")]
     actions: Annotated[
-        list[Callable[..., GenericCallbackReturnValue]],
+        list[Callable[..., GenericCallbackReturnValue | Awaitable[GenericCallbackReturnValue]]],
         Doc(
             "List of actions to be added to the view."
             "Name and description of the action is taken from the functions __name__ and __doc__"
@@ -418,7 +426,10 @@ class InputForm:
     title: Annotated[str, Doc("Title of the form")]
     description: Annotated[str | Callable[[], str], Doc("Description of the form (or generator)")]
     schema: Annotated[type[BaseModel], Doc("Schema of the form")]
-    callback: Annotated[Callable[[BaseModel], GenericCallbackReturnValue], Doc("Callback function for the form")]
+    callback: Annotated[
+        Callable[[BaseModel], GenericCallbackReturnValue | Awaitable[GenericCallbackReturnValue]],
+        Doc("Callback function for the form"),
+    ]
 
 
 class LiveDataManagerBase(abc.ABC):
@@ -433,7 +444,6 @@ class LiveDataManagerBase(abc.ABC):
         value: str
 
     topic: str
-    produce: bool = True
 
     @abc.abstractmethod
     def __init__(self, topic: str):

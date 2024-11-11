@@ -6,16 +6,14 @@ import random
 from collections.abc import AsyncIterable
 from datetime import datetime, timedelta
 from random import randrange
-from typing import Annotated
+from typing import Annotated, Any
 
 import uvicorn
-from base import Base, SessionLocal, engine
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from models import Item, User
 from pydantic import Field, create_model
 from sqlalchemy import func, literal
-from sqlalchemy.orm import Query
+from sqlalchemy.orm import Query, make_transient_to_detached, make_transient
 from starlette import status
 from starlette.responses import RedirectResponse
 from typing_extensions import Doc
@@ -40,6 +38,9 @@ from admin_table.modules import SQLAlchemyResolver
 from admin_table.modules.bases import ResolverBase
 from admin_table.wrappers import FastAPIWrapper
 
+from .base import Base, SessionLocal, engine
+from .models import Item, User
+
 
 def custom_user_action(
     user: User, string_param: Annotated[str, Doc("first param of the method")], int_param: int, bool_param: bool
@@ -51,7 +52,7 @@ def custom_user_action(
     return f"performed action on {user} with params: {string_param}, {int_param}, {bool_param}"
 
 
-def another_action(user: User, bool_param: bool) -> RedirectList:
+async def another_action(user: User, bool_param: bool) -> RedirectList:
     """
     Performs various actions on the user :wink:
     Try to pass "hello" into the `string_param` and see what happens
@@ -82,7 +83,7 @@ def create_item(user: User, title: str, description: str, public: bool = False) 
         return RefreshView(message=f"Created item {item}")
 
 
-def random_graph_data(
+async def random_graph_data(
     user: User, range_from: datetime | None = None, range_to: datetime | None = None
 ) -> LineGraphData:
     range_from = range_from or (datetime.now() - timedelta(days=10))
@@ -134,10 +135,29 @@ class LiveDataProducer(LiveDataManagerBase):
     def __init__(self, topic: str):
         super().__init__(topic)
 
-    async def produce_data(self) -> AsyncIterable[LiveDataManagerBase.DataEvent]:
-        while self.produce:
+    async def __aenter__(self) -> AsyncIterable[LiveDataManagerBase.DataEvent]:
+        self.producer = self.produce()
+        return self.producer
+
+    async def __aexit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: Any) -> bool | None:
+        await self.producer.aclose()
+        return None
+
+    async def produce(self):
+        while True:
             await asyncio.sleep(1)
-            yield LiveDataManagerBase.DataEvent(str(randrange(1, 100)))
+            yield self.DataEvent(value=str(randrange(100)))
+
+
+async def create_user_function(model: Any) -> Any:
+    with SessionLocal(expire_on_commit=False) as s:
+        user = User(email=model.email)
+        s.add(user)
+        s.commit()
+
+    make_transient(user)
+    make_transient_to_detached(user)
+    return user
 
 
 icon_data = open(os.path.join(os.path.dirname(__file__), "icon.png"), "rb").read()
@@ -223,7 +243,7 @@ config = AdminTableConfig(
                     schema=create_model(
                         "CreateUser", email=(str, Field(..., title="user email")), username=(str, Field(...))
                     ),
-                    callback=lambda user: f"Created User: {user}",
+                    callback=create_user_function,
                 ),
             ),
         ),
