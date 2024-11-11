@@ -1,5 +1,6 @@
 import abc
 import dataclasses
+from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Annotated, Literal, TypeAlias
 
 from typing_extensions import Doc
@@ -31,11 +32,13 @@ class ResolverBase(abc.ABC):
         per_page: int,
         filters: list[AppliedFilter],
         sort: tuple[str, Literal["asc", "desc"]],
-    ) -> ResolvedListData:
+    ) -> ResolvedListData | Awaitable[ResolvedListData]:
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def resolve_detail(self, resource: "Resource", entry_id: str) -> ResolvedData | None:
+    def resolve_detail(
+        self, resource: "Resource", entry_id: str
+    ) -> ResolvedData | None | Awaitable[ResolvedData | None]:
         raise NotImplementedError()
 
     @dataclasses.dataclass

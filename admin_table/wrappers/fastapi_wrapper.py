@@ -47,7 +47,7 @@ class FastAPIWrapper(BaseWrapper):
 
             # call the route handler
             try:
-                response = route.handler(handler_request)
+                response = await route.handler(handler_request)
             except Exception:
                 traceback.print_exc(5, sys.stderr)
                 raise
