@@ -383,12 +383,7 @@ class LineGraphData(GraphData):
     yAxisLabel: str | None = None  # A label to display next to the y-axis
 
 
-class GetGraphCallback(Protocol):
-    __name__: str
-
-    def __call__(
-        self, __model: Any, range_from: datetime | None = None, range_to: datetime | None = None
-    ) -> GraphData | Awaitable[GraphData]: ...
+GetGraphCallback = Callable[[Any, datetime | None, datetime | None], GraphData | Awaitable[GraphData]]
 
 
 @dataclasses.dataclass(kw_only=True)

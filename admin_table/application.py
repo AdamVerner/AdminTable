@@ -959,9 +959,9 @@ class AdminTable(ListViewMixin, _HasConfig):
 
         try:
             if asyncio.iscoroutinefunction(data_function):
-                graph_data = await data_function(entry, range_from=range_from, range_to=range_to)
+                graph_data = await data_function(entry, range_from, range_to)
             else:
-                graph_data = data_function(entry, range_from=range_from, range_to=range_to)
+                graph_data = data_function(entry, range_from, range_to)
         except Exception as e:
             logging.exception("Failed getting graph data")
             return AdminTableRoute.RouteResponse(
