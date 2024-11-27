@@ -32,9 +32,9 @@ export default ({ title, value }: ExtendableProps) => {
   const BREAK = 25;
   // exception for UUIDs
   const is_long = value.length > BREAK && !value.match(/\w{8}(-\w{4}){3}-\w{12}/g);
-  const is_html = title?.startsWith('[[html]]');
-  const is_markdown = title?.startsWith('[[markdown]]');
-  const is_json = title?.startsWith('[[json]]');
+  const is_html = title?.toLowerCase()?.startsWith('[[html]]');
+  const is_markdown = title?.toLowerCase()?.startsWith('[[markdown]]');
+  const is_json = title?.toLowerCase()?.startsWith('[[json]]');
   const in_modal = is_long || is_html || is_markdown || is_json;
 
   if (!in_modal) {
@@ -50,7 +50,11 @@ export default ({ title, value }: ExtendableProps) => {
   } else if (is_markdown) {
     modal_content = <MarkdownPage content={value} />;
   } else if (is_json) {
-    modal_content = <Code block>{JSON.stringify(JSON.parse(value), undefined, 2)}</Code>;
+    try {
+      modal_content = <Code block>{JSON.stringify(JSON.parse(value), undefined, 2)}</Code>;
+    } catch (e) {
+      modal_content = <Code block>value</Code>;
+    }
   } else {
     modal_content = <Text>{value}</Text>;
   }

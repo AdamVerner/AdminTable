@@ -1,10 +1,10 @@
 import ast
 import dataclasses
 from collections.abc import Callable, Generator
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 import sqlalchemy.exc
-from sqlalchemy import BinaryExpression, ColumnElement, select
+from sqlalchemy import BinaryExpression, ColumnElement, Row, select
 from sqlalchemy.orm import (
     ColumnProperty,
     DeclarativeBase,
@@ -29,7 +29,7 @@ class SQLAlchemyResolver(ResolverBase):
         session: Annotated[Callable[[], Session], Doc("Function called at runtime which should provide a session")],
         model: Annotated[type[DeclarativeBase], Doc("Base model from which the attributes will be selected")],
         extra_cols: Annotated[
-            dict[str, Callable[[Any], str] | Query | ColumnElement] | None,
+            dict[str, Query | ColumnElement] | InstrumentedAttribute | None,
             Doc("Extra columns to be added to the list view"),
         ] = None,
     ):
@@ -58,12 +58,19 @@ class SQLAlchemyResolver(ResolverBase):
             if not isinstance(attr.property, ColumnProperty):
                 continue
 
+            if attr.property.deferred:
+                print("Deffered, skipping", attr, attr.property)
+                continue
+
             all_columns[name] = self.__ListColumns(ref=name, src=attr, sortable=True)
 
         # parse additional columns provided by the user
         for name, column in self.extra_cols.items():
-            if isinstance(column, Query | ColumnElement):
+            if isinstance(column, Query | ColumnElement | InstrumentedAttribute):
                 all_columns[name] = self.__ListColumns(ref=name, src=column.label(name), sortable=False)
+
+            else:
+                raise ValueError(f"Invalid column type for {name}: {column}")
 
         assert all_columns, "No columns found in the model"
         assert all_columns.get(resource.id_col), "ID column not found in the model"
@@ -105,6 +112,17 @@ class SQLAlchemyResolver(ResolverBase):
 
             yield op(value)
 
+    def _make_entity(self, entry: Row[tuple[Any]], attributes: dict[str, __ListColumns]) -> dict[str, str]:
+        """Returns entity which can be used as both class and dict"""
+        obj = {key: value for value, key in zip(entry, attributes.keys())}
+
+        self.model.__getitem__ = lambda s, item: obj[item]
+        self.model.get = lambda s, *args, **kwargs: obj.get(*args, **kwargs)
+
+        entity = self.model(**{k: v for k, v in obj.items() if k in dir(self.model)})
+        make_transient_to_detached(entity)
+        return cast(dict[str, str], entity)
+
     def resolve_list(
         self,
         resource: "Resource",
@@ -127,9 +145,15 @@ class SQLAlchemyResolver(ResolverBase):
             total = session.execute(select(count()).select_from(base_select.subquery())).scalar()
             rows = session.execute(list_select).fetchall()
 
+            list_data: list[dict[str, str]] = []
+
+            for row in rows:
+                entity = self._make_entity(row, attributes)
+                list_data.append(cast(dict[str, str], entity))  # type: ignore
+
         # parse data into a dictionary
         return self.ResolvedListData(
-            list_data=[{key: value for value, key in zip(row, attributes.keys())} for row in rows],
+            list_data=list_data,
             pagination={"page": page, "per_page": per_page, "total": total or 0},
         )
 
@@ -148,14 +172,7 @@ class SQLAlchemyResolver(ResolverBase):
             except sqlalchemy.exc.NoResultFound:
                 return None
 
-        obj = {key: value for value, key in zip(entry, attributes.keys())}
-
-        self.model.__getitem__ = lambda s, item: obj[item]
-        self.model.get = lambda s, *args, **kwargs: obj.get(*args, **kwargs)
-
-        entity = self.model(**{k: v for k, v in obj.items() if k in dir(self.model)})
-        make_transient_to_detached(entity)
-        # entity = session.merge(entity, load=False)
+            entity = self._make_entity(entry, attributes)
 
         return entity  # type: ignore
 
