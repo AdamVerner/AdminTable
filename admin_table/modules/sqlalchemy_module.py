@@ -29,7 +29,7 @@ class SQLAlchemyResolver(ResolverBase):
         session: Annotated[Callable[[], Session], Doc("Function called at runtime which should provide a session")],
         model: Annotated[type[DeclarativeBase], Doc("Base model from which the attributes will be selected")],
         extra_cols: Annotated[
-            dict[str, Query | ColumnElement] | InstrumentedAttribute | None,
+            dict[str, Query | ColumnElement | InstrumentedAttribute] | None,
             Doc("Extra columns to be added to the list view"),
         ] = None,
     ):
