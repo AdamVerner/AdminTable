@@ -1,7 +1,7 @@
 import abc
 import dataclasses
 import random
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 from types import TracebackType
 from typing import (
@@ -113,7 +113,7 @@ class AdminTableConfig:
         dict[str, NavigationIcon], Doc("Icons which should be displayed alongside the navigation links")
     ] = dataclasses.field(default_factory=dict)
     input_forms: Annotated[
-        list["InputForm"],
+        Sequence["InputForm"],
         Doc(
             "List of all forms which can be used through the application."
             "Each form will be available on ~/forms/<form_name>."
@@ -245,7 +245,7 @@ ListViewFieldType = (
 
 @dataclasses.dataclass(kw_only=True)
 class ListView(ViewBase):
-    fields: Annotated[list[ListViewFieldType], Doc("List of fields to be selected from the model")]
+    fields: Annotated[Sequence[ListViewFieldType], Doc("List of fields to be selected from the model")]
     detail_value_ref: Annotated[str | None, Doc("Column to be used as the detail value")] = None
 
     default_sort: Annotated[
@@ -295,7 +295,7 @@ class RedirectDetail(HandlerAction):
 @dataclasses.dataclass(kw_only=True)
 class RedirectList(HandlerAction):
     resource: str
-    filters: list["ResolverBase.AppliedFilter"] = dataclasses.field(default_factory=list)
+    filters: Sequence["ResolverBase.AppliedFilter"] = dataclasses.field(default_factory=list)
     sort: tuple[str, str] | None = None
 
 
@@ -351,8 +351,8 @@ class LineGraphData(GraphData):
 
     chart_type: str = "line"
 
-    data: list[dict[str, Any]]  # Data used to display chart
-    series: list[
+    data: Sequence[dict[str, Any]]  # Data used to display chart
+    series: Sequence[
         dict[str, Any]
     ]  # An array of objects with name and color keys. Determines which data should be consumed from the data array
     dataKey: str  # Key of the data object for x-axis values
@@ -362,7 +362,7 @@ class LineGraphData(GraphData):
     )
     connectNulls: bool | None = None  # Connect null values with a line
     fillOpacity: float | None = None  # Controls fill opacity of all lines, 1 by default
-    gradientStops: list[dict[str, Any]] | None = None  # Data used to generate gradient stops
+    gradientStops: Sequence[dict[str, Any]] | None = None  # Data used to generate gradient stops
     gridAxis: Literal["none", "x", "y", "xy"] | None = (
         None  # Specifies which lines should be displayed in the grid, 'x' by default
     )
@@ -388,9 +388,9 @@ GetGraphCallback = Callable[[Any, datetime | None, datetime | None], GraphData |
 
 @dataclasses.dataclass(kw_only=True)
 class DetailView(ViewBase):
-    fields: Annotated[list[ListViewFieldType], Doc("List of fields to be selected from the model")]
+    fields: Annotated[Sequence[ListViewFieldType], Doc("List of fields to be selected from the model")]
     actions: Annotated[
-        list[Callable[..., GenericCallbackReturnValue | Awaitable[GenericCallbackReturnValue]]],
+        Sequence[Callable[..., GenericCallbackReturnValue | Awaitable[GenericCallbackReturnValue]]],
         Doc(
             "List of actions to be added to the view."
             "Name and description of the action is taken from the functions __name__ and __doc__"
@@ -398,14 +398,14 @@ class DetailView(ViewBase):
         ),
     ] = dataclasses.field(default_factory=list)
     tables: Annotated[
-        list[SubTable],
+        Sequence[SubTable],
         Doc(
             "List of tables to be added to the view."
             "The 'ref' is used as title name of the table instead of the resource name."
         ),
     ] = dataclasses.field(default_factory=list)
     graphs: Annotated[
-        list[GetGraphCallback],
+        Sequence[GetGraphCallback],
         Doc(
             "List of graphs to be added to the view."
             "Name and description of the graph is taken from the functions __name__ and __doc__"

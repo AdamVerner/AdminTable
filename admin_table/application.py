@@ -5,7 +5,7 @@ import logging
 import os.path
 import string
 import sys
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from inspect import Parameter, signature
 from typing import Any, Literal, Protocol, TypedDict, cast
 from urllib.parse import quote, unquote
@@ -95,7 +95,7 @@ class AdminTableRoute:
         status_code: int = 200
         body: dict | str = dataclasses.field(default_factory=lambda: {})
         headers: dict = dataclasses.field(default_factory=lambda: {})
-        cookies: list[dict] = dataclasses.field(default_factory=lambda: [])
+        cookies: Sequence[dict] = dataclasses.field(default_factory=lambda: [])
         content_type: str | None = None
 
     path: str
@@ -392,7 +392,7 @@ class ListViewMixin(AuthRouteMixin, _HasConfig):
 
         current_page = int(request.query_params.get("page", 1) or 1)
         current_per_page = int(request.query_params.get("per_page", 50) or 50)
-        raw_filters: list[Any] = [x.split(";") for x in request.query_params.getlist("filter")]
+        raw_filters: Sequence[Any] = [x.split(";") for x in request.query_params.getlist("filter")]
         default_sort = f"{view.default_sort[0] or resource.id_col};{view.default_sort[1]}"
         current_sort = cast(
             tuple[str, Literal["asc", "desc"]],
@@ -502,7 +502,7 @@ class AdminTable(ListViewMixin, _HasConfig):
         self._subscriber_info: dict[str, AdminTable.LiveDataTopic] = {}
 
     @property
-    def routes(self) -> list[AdminTableRoute]:
+    def routes(self) -> Sequence[AdminTableRoute]:
         # noinspection PyTypeChecker
         return [
             AdminTableRoute(
@@ -659,7 +659,7 @@ class AdminTable(ListViewMixin, _HasConfig):
             tpc["clients"].remove(ws) if ws in tpc["clients"] else None
 
     @property
-    def websockets(self) -> list[AdminTableWebsocket]:
+    def websockets(self) -> Sequence[AdminTableWebsocket]:
         return [
             AdminTableWebsocket(
                 path="/ws/live_data",

@@ -11,7 +11,6 @@ from sqlalchemy.orm import (
     InstrumentedAttribute,
     Query,
     Session,
-    make_transient_to_detached,
 )
 from sqlalchemy.orm.instrumentation import manager_of_class
 from sqlalchemy.sql.functions import count
@@ -24,6 +23,8 @@ SQLAlchemyListView_FieldType = str | InstrumentedAttribute | Query | ColumnEleme
 
 
 class SQLAlchemyResolver(ResolverBase):
+    model: type[DeclarativeBase]
+
     def __init__(
         self,
         session: Annotated[Callable[[], Session], Doc("Function called at runtime which should provide a session")],
@@ -116,11 +117,17 @@ class SQLAlchemyResolver(ResolverBase):
         """Returns entity which can be used as both class and dict"""
         obj = {key: value for value, key in zip(entry, attributes.keys())}
 
-        self.model.__getitem__ = lambda s, item: obj[item]
-        self.model.get = lambda s, *args, **kwargs: obj.get(*args, **kwargs)
+        class ModelOverwrite(self.model):  # type: ignore[name-defined]
+            __abstract__ = True
 
-        entity = self.model(**{k: v for k, v in obj.items() if k in dir(self.model)})
-        make_transient_to_detached(entity)
+            def __getitem__(self, item):
+                return obj[item]
+
+            def get(self, *args, **kwargs):
+                return obj.get(*args, **kwargs)
+
+        entity = ModelOverwrite(**{k: v for k, v in obj.items() if k in dir(self.model)})
+        # make_transient_to_detached(entity)
         return cast(dict[str, str], entity)
 
     def resolve_list(
