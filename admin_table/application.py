@@ -5,7 +5,7 @@ import logging
 import os.path
 import string
 import sys
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from inspect import Parameter, signature
 from typing import Any, Literal, Protocol, TypedDict, cast
 from urllib.parse import quote, unquote
@@ -218,6 +218,9 @@ class _Column:
         self.description = description
 
     async def value(self, row):
+        # we do not perform check on purpose here, to let the application die
+        # in case of programming error, that should be more noticable than screaming
+        # errors into the command line
         return row[self.ref]
 
     async def head(self, current_sort: tuple[str, Literal["asc", "desc"]] | None = None):
@@ -244,7 +247,7 @@ class _LinkDetailColumn(_Column):
             "type": "link",
             "kind": "detail",
             "resource": self.resource,
-            "value": row[self.ref],
+            "value": await super().value(row),
             "id": row[self.id_ref],
             "href": f"/resource/{quote(self.resource)}/detail/{row[self.id_ref]}",
         }
@@ -263,7 +266,7 @@ class _LinkTableColumn(_Column):
             "type": "link",
             "kind": "table",
             "resource": self.resource,
-            "value": row[self.ref],
+            "value": await super().value(row),
             "filter": {"col": self.filter_col, "op": self.filter_op, "val": row[self.filter_ref]},
             "href": f"/resource/{quote(self.resource)}/list"
             f"?filter={self.filter_col};{self.filter_op};{row[self.filter_ref]}",
@@ -285,11 +288,7 @@ class _ComputedColumn(_Column):
             print(f"Failed computing {self}: {e}", file=sys.stderr)
             value = "# ERROR #"
 
-        if isinstance(value, str):
-            return value
-        # TODO support for returning links to details and lists
-
-        return str(value)
+        return value
 
 
 class _LiveValueColumn(_Column):
@@ -308,9 +307,10 @@ class _LiveValueColumn(_Column):
         }
 
 
-def field_resolver(fields):
+def field_resolver(fields) -> Iterable[_Column]:
     for field in fields:
         # pattern match on the field type
+        handler: Callable[[Any], Any | Awaitable[Any]]
         match field:
             # field is string
             case ref if isinstance(ref, str):

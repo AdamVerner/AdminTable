@@ -21,14 +21,20 @@ export interface ExtendableProps {
   value: string | any;
 }
 
-export default ({ title, value }: ExtendableProps) => {
+export default ({ title, value: value_ }: ExtendableProps) => {
   const [opened, setOpened] = useState(false);
   const handleOpen = () => setOpened(true);
   const handleClose = () => setOpened(false);
 
-  if (typeof value !== 'string') {
-    return <Text>{JSON.stringify(value)}</Text>;
+  let value: string;
+  if (typeof value_ !== 'string') {
+    value = JSON.stringify(value_);
+  } else {
+    value = value_;
   }
+
+  console.log('value', title, typeof value, value);
+
   const BREAK = 25;
   // exception for UUIDs
   const is_long = value.length > BREAK && !value.match(/\w{8}(-\w{4}){3}-\w{12}/g);
@@ -37,7 +43,7 @@ export default ({ title, value }: ExtendableProps) => {
   const is_json = title?.toLowerCase()?.startsWith('[[json]]');
   const in_modal = is_long || is_html || is_markdown || is_json;
 
-  if (!in_modal) {
+  if (!in_modal || value.length < BREAK) {
     return <Text style={{ minWidth: '3em' }}>{value}</Text>;
   }
   let modal_content;

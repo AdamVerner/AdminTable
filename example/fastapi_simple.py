@@ -230,9 +230,24 @@ config = AdminTableConfig(
                             lambda d: '{"key": "value", "key2": "value2", "sub": {"key": "value"}}',
                         ),
                         (
+                            "[[json]]Another JSON Field",
+                            "This field will show formated JSON data",
+                            lambda d: {"key": "value", "key2": "value2", "sub": {"key": "value"}},
+                        ),
+                        (
                             "Live Value",
                             "This field is automatically updated using the LiveDataManager",
                             LiveValue("topic_value", "initial_topic_value", history=True),
+                        ),
+                        (
+                            "Custom link",
+                            lambda d: {
+                                "type": "link",
+                                "kind": "table",
+                                "resource": "Items",
+                                "value": "Custom link to my items",
+                                "filter": {"col": "owner_id", "op": "eq", "val": d["id"]},
+                            },
                         ),
                     ],
                     actions=[custom_user_action, another_action, hello, create_item],

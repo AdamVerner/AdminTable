@@ -36,10 +36,15 @@ export interface FieldProps {
 }
 
 export default ({ cell, title }: FieldProps) => {
-  if (typeof cell !== 'object' || !cell) {
+  if (
+    typeof cell === 'string' ||
+    typeof cell === 'number' ||
+    typeof cell === 'boolean' ||
+    cell === null
+  ) {
     return <Extendable title={title} value={`${cell}`} />;
   }
-  if (cell.type === 'link' && cell.kind === 'detail') {
+  if ('type' in cell && 'kind' in cell && cell.type === 'link' && cell.kind === 'detail') {
     if (!cell.resource || !cell.id) {
       return <Extendable title={title} value="" />;
     }
@@ -49,7 +54,7 @@ export default ({ cell, title }: FieldProps) => {
       </Link>
     );
   }
-  if (cell.type === 'link' && cell.kind === 'table') {
+  if ('type' in cell && 'kind' in cell && cell.type === 'link' && cell.kind === 'table') {
     return (
       <Link
         to={linkBuilder.ResourceList(cell.resource, [
@@ -60,10 +65,10 @@ export default ({ cell, title }: FieldProps) => {
       </Link>
     );
   }
-  if (cell.type === 'live') {
+  if ('type' in cell && cell.type === 'live') {
     return (
       <LiveValue initial={cell.initial} topic={cell.topic} history={cell.history} title={title} />
     );
   }
-  return JSON.stringify(cell);
+  return <Extendable title={title} value={cell} />;
 };
