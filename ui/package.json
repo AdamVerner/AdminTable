@@ -2,7 +2,7 @@
   "name": "admin_table-frontend",
   "private": true,
   "type": "module",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "scripts": {
     "dev": "VITE_API_URL=http://localhost:8000/api/admin/ vite",
     "build": "tsc && vite build",

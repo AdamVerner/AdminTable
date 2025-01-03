@@ -1,4 +1,4 @@
-import { Affix, Group, Pagination, Select } from '@mantine/core';
+import { Box, Group, Pagination, Paper, Select } from '@mantine/core';
 
 interface PageSelectProps {
   total: number;
@@ -9,35 +9,42 @@ interface PageSelectProps {
   float?: boolean;
 }
 export default ({ total, page, perPage, setPage, setPerPage, float = true }: PageSelectProps) => {
-  const totalPages = total / (perPage ?? 50);
+  const totalPages = Math.ceil(total / (perPage ?? 50));
   const control = (
-    <Group>
-      <Pagination
-        value={page}
-        total={totalPages}
-        withControls={false}
-        withEdges
-        onChange={(value) => {
-          setPage(value);
-        }}
-      />
-
-      <Select
-        value={`${perPage}`}
-        data={['1', '10', '20', '50', '100', '200']}
-        allowDeselect={false}
-        onChange={(value) => {
-          setPerPage(parseInt(value!, 10));
-        }}
-      />
+    <Group wrap="nowrap" justify="space-between">
+      <div>
+        {page * perPage - perPage + 1}-{Math.min(page * perPage, total)}/{total}
+      </div>
+      <Group>
+        <Pagination
+          value={page}
+          total={totalPages}
+          withControls={false}
+          siblings={1}
+          onChange={(value) => {
+            setPage(value);
+          }}
+          style={{ flexWrap: 'nowrap' }}
+        />
+        <Select
+          value={`${perPage}`}
+          data={['1', '10', '20', '50', '100', '200']}
+          allowDeselect={false}
+          onChange={(value) => {
+            setPerPage(parseInt(value!, 10));
+          }}
+        />
+      </Group>
     </Group>
   );
   if (!float) {
-    return control;
+    return <Box my="xs">{control}</Box>;
   }
   return (
-    <Affix position={{ bottom: 40, left: '50%' }} style={{ transform: 'translateX(-50%)' }}>
-      {control}
-    </Affix>
+    <Box pos="sticky" bottom={40}>
+      <Paper px="md" py="xs" radius="md" bg="var(--mantine-color-default-hover)">
+        {control}
+      </Paper>
+    </Box>
   );
 };

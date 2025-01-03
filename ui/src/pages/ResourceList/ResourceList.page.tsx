@@ -31,7 +31,7 @@ export default () => {
   }
 
   return (
-    <div style={{ width: '100%' }}>
+    <div style={{ width: '100%', position: 'relative' }}>
       <Group mb="xs">
         <Title order={1}>{data.meta.title}</Title>
         {data.meta.has_create && (
@@ -46,7 +46,7 @@ export default () => {
         applied_filters={data.applied_filters}
         available_filters={data.available_filters}
       />
-      <Table striped>
+      <Table striped mb="50">
         <TableHead header={data.header} setSort={setSort} />
         <TableBody header={data.header} rows={data.data} />
       </Table>
