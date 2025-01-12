@@ -1,14 +1,17 @@
-import { IconChevronRight, IconLogout } from '@tabler/icons-react';
+import { IconChevronRight, IconLogout, IconSettings, IconUser } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
-import { Avatar, Group, Loader, Menu, rem, Text, UnstyledButton } from '@mantine/core';
-import dataService, { useGetData } from '@/services/data.service';
+import { Avatar, Group, Menu, rem, Text, UnstyledButton } from '@mantine/core';
+import Loader from '@/components/Loader';
+import { useUserInfoStore } from '@/stores/user.store';
 import classes from './UserButton.module.css';
 
-export function UserButton() {
+export const UserButton = () => {
   const navigate = useNavigate();
-  const [data, isLoading] = useGetData(async () => await dataService.getUserInfo(), []);
+  const user_info = useUserInfoStore((state) => state.user_info);
+  const load_user_info = useUserInfoStore((state) => state.load_user_info);
 
-  if (isLoading || !data) {
+  if (!user_info) {
+    load_user_info().then();
     return <Loader />;
   }
 
@@ -24,29 +27,14 @@ export function UserButton() {
       <Menu.Target>
         <UnstyledButton w="100%" p="md" className={classes.user}>
           <Group>
-            <Avatar
-              src={
-                data.user?.avatar ??
-                'https://raw.githubusercontent.com/mantinedev/mantine/master/.demo/avatars/avatar-8.png'
-              }
-              radius="xl"
-            />
-
+            <Avatar src={user_info?.avatar_src} radius="xl" />
             <div style={{ flex: 1 }}>
-              {data.user?.name ? (
-                <>
-                  <Text size="sm" fw={500}>
-                    {data.user?.name}
-                  </Text>
-                  <Text c="dimmed" size="xs">
-                    {data.user.email}
-                  </Text>
-                </>
-              ) : (
-                <Text size="sm" fw={500}>
-                  {data.user.email}
-                </Text>
-              )}
+              <Text size="sm" fw={500}>
+                {user_info.display}
+              </Text>
+              <Text c="dimmed" size="xs">
+                {user_info?.email}
+              </Text>
             </div>
 
             <IconChevronRight style={{ width: rem(14), height: rem(14) }} stroke={1.5} />
@@ -54,6 +42,25 @@ export function UserButton() {
         </UnstyledButton>
       </Menu.Target>
       <Menu.Dropdown>
+        {user_info?.has_profile_setting && (
+          <Menu.Item
+            leftSection={<IconUser style={{ width: rem(16), height: rem(16) }} stroke={1.5} />}
+            onClick={() => {
+              navigate('/profile');
+            }}
+          >
+            User profile
+          </Menu.Item>
+        )}
+        <Menu.Item
+          leftSection={<IconSettings style={{ width: rem(16), height: rem(16) }} stroke={1.5} />}
+          onClick={() => {
+            navigate('/settings');
+          }}
+        >
+          Settings
+        </Menu.Item>
+        <Menu.Divider />
         <Menu.Item
           leftSection={<IconLogout style={{ width: rem(16), height: rem(16) }} stroke={1.5} />}
           onClick={() => {
@@ -65,4 +72,4 @@ export function UserButton() {
       </Menu.Dropdown>
     </Menu>
   );
-}
+};

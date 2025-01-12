@@ -2,7 +2,7 @@
   "name": "admin_table-frontend",
   "private": true,
   "type": "module",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "scripts": {
     "dev": "VITE_API_URL=http://localhost:8000/api/admin/ vite",
     "build": "tsc && vite build",
@@ -42,7 +42,8 @@
     "react-router-dom": "^6.26.1",
     "react-use-websocket": "^4.10.0",
     "recharts": "2",
-    "remark-gfm": "^4.0.0"
+    "remark-gfm": "^4.0.0",
+    "zustand": "^5.0.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.10.0",

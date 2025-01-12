@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios, { type AxiosError, type AxiosResponse } from 'axios';
+import { useNavigate } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { authService } from '@/services/auth';
 
@@ -32,6 +33,12 @@ export class DataAPI {
   async post<T>(url: string, data: any = {}): Promise<T> {
     return await this._process<T>(
       axios.post<T>(this.apiUrl + url, data, { headers: authService.getHeaders() })
+    );
+  }
+
+  async patch<T>(url: string, data: any = {}): Promise<T> {
+    return await this._process<T>(
+      axios.patch<T>(this.apiUrl + url, data, { headers: authService.getHeaders() })
     );
   }
 
@@ -97,6 +104,23 @@ interface ActionResponse {
     | { type: 'customPage'; name: string };
 }
 
+export interface AuthInfo {
+  message: string;
+  access_token: string;
+  refresh_token: string;
+  capabilities: string[];
+  token_lifetime: number;
+}
+
+export interface UserInfo {
+  user_id?: string;
+  display?: string;
+  email: string;
+  avatar_src?: string;
+  capabilities: string[];
+  [key: string]: any;
+}
+
 class DataService {
   data_api = new DataAPI(API_URL);
 
@@ -104,14 +128,28 @@ class DataService {
     await this.data_api.post('ping');
   }
 
-  async login(username: string, password: string): Promise<{ token: string }> {
-    return await this.data_api.post('login', { username, password });
+  async auth_login(username: string, password: string, otp?: string): Promise<AuthInfo> {
+    return await this.data_api.post('auth/login', { username, password, otp });
   }
 
-  async getUserInfo(): Promise<{
-    user: { name?: string; email: string; avatar?: string };
+  async auth_refresh(refresh_token: AuthInfo['refresh_token']): Promise<AuthInfo> {
+    return await this.data_api.post('auth/refresh', { token: refresh_token });
+  }
+
+  async auth_logout(refresh_token: AuthInfo['refresh_token']): Promise<{
+    refresh_token: string;
+    access_token: string;
+    valid_for: string;
+    capabilities: string[];
   }> {
+    return await this.data_api.post('auth/logout', { token: refresh_token });
+  }
+
+  async getUserInfo(): Promise<UserInfo> {
     return await this.data_api.get('user');
+  }
+  async setUserInfo(user_info: Partial<UserInfo>) {
+    return await this.data_api.patch('user', user_info);
   }
 
   async getNavigation(): Promise<{
@@ -305,6 +343,7 @@ export function useGetData<DataReturn>(
   deps: any[] = [],
   reportSuccess: boolean = false
 ): [DataReturn | undefined, boolean, string] {
+  const navigate = useNavigate();
   const [data, setData] = useState<DataReturn>();
   const [isLoading, setIsLoading] = useState(true);
   const [failed, setFailed] = useState('');
@@ -337,12 +376,17 @@ export function useGetData<DataReturn>(
           return;
         }
         setFailed(`Loading data failed ${reason}`);
+        if (reason.toString().includes('Unauthorized')) {
+          authService.logout().then(() => navigate('/login'));
+        }
+
         notifications.show({
           title: 'Failed',
           message: `Failed: ${reason}`,
           color: 'red',
           autoClose: 1500,
         });
+        navigate('/');
       })
       .finally(() => {
         if (ignore) {

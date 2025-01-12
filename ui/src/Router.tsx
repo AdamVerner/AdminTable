@@ -14,9 +14,11 @@ import InputFormPage from '@/pages/InputForm.page';
 import CreateResourcePage from '@/pages/ResourceCreate';
 import ResourceDetail from '@/pages/ResourceDetail';
 import ResourceListPage from '@/pages/ResourceList';
+import { SettingsPage } from '@/pages/Settings';
 import { authService } from '@/services/auth';
 import { Layout } from './Layout';
 import { LoginPage } from './pages/Login.page';
+import { UserProfilePage } from './pages/UserProfile';
 
 interface UserLoginHandlerProps {
   loggedInComponent?: React.ReactNode;
@@ -84,6 +86,14 @@ const router = createHashRouter(
             {
               path: 'resource/:resourceName/detail/:detailId',
               element: <ResourceDetail />,
+            },
+            {
+              path: 'profile',
+              element: <UserProfilePage />,
+            },
+            {
+              path: 'settings/:tab?',
+              element: <SettingsPage />,
             },
           ],
         },

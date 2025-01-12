@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "admin-table"
-version = "0.0.25"
+version = "0.0.26"
 description = "Another Dashboard Library for displaying mostly tables"
 readme = "README.md"
 license = "MIT"
@@ -17,6 +17,7 @@ include = [
 [tool.poetry.dependencies]
 python = "^3.11"
 fastapi = {version = "*", optional = true}
+pyjwt = "^2.10.1"
 
 [tool.poetry.group.dev.dependencies]
 fastapi = {extras = ["standard"], version = "^0.114.0"}

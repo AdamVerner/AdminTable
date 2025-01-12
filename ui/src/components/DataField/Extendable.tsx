@@ -80,7 +80,11 @@ export default ({ title, value: value_ }: ExtendableProps) => {
         opened={opened}
         onClose={handleClose}
         size="auto"
-        title={<Title order={1}>{fix_title(title || '')}</Title>}
+        title={
+          <Title order={1} component="span">
+            {fix_title(title || '')}
+          </Title>
+        }
       >
         {modal_content}
       </Modal>

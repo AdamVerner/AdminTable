@@ -13,10 +13,10 @@ from urllib.parse import quote, unquote
 from sqlalchemy.orm import InstrumentedAttribute
 from starlette.datastructures import ImmutableMultiDict
 
+from .auth import AuthException, AuthProviderBase, InvalidCredentialsException, MissingOTPException
 from .config import (
     AdminTableConfig,
     CreateView,
-    DefaultAuthProvider,
     DetailView,
     GetGraphCallback,
     InputForm,
@@ -88,7 +88,7 @@ class AdminTableRoute:
         cookies: dict[str, str] = dataclasses.field(default_factory=lambda: {})
 
         # user injected by protected decorator
-        user: DefaultAuthProvider.User | None = None
+        user: AuthProviderBase.AuthorizedUserInfo | None = None
 
     @dataclasses.dataclass
     class RouteResponse:
@@ -155,29 +155,27 @@ class AuthRouteMixin(_HasConfig):
     @staticmethod
     async def user_from_header(
         admin_table: "AdminTable", headers: dict[str, str]
-    ) -> AdminTableRoute.RouteResponse | DefaultAuthProvider.User:
+    ) -> AdminTableRoute.RouteResponse | AuthProviderBase.AuthorizedUserInfo:
         # check if bearer is passed in websocket protocol
         if bearer := headers.get("sec-websocket-protocol", headers.get("Sec-WebSocket-Protocol")):
             authorization = bytes.fromhex(bearer.removeprefix("bearer")).decode("utf-8")
         else:
-            authorization = headers.get("Authorization", headers.get("authorization") or "")
+            authorization = headers.get("Authorization", headers.get("authorization", ""))
 
         if not authorization:
             return AdminTableRoute.RouteResponse(
                 status_code=401,
-                body={"message": "Unauthorized"},
+                body={"message": "Unauthorized - missing token"},
                 content_type="application/json",
             )
 
         token = authorization.removeprefix("Bearer ")
-        if asyncio.iscoroutinefunction(validate_token := admin_table.config.auth_provider.validate_token):
-            user = await validate_token(token)
-        else:
-            user = validate_token(token)
-        if not user:
+        try:
+            user = await admin_table.config.auth_provider.access(token)
+        except AuthException as e:
             return AdminTableRoute.RouteResponse(
                 status_code=401,
-                body={"message": "Unauthorized"},
+                body={"message": f"Unauthorized - {e}"},
                 content_type="application/json",
             )
 
@@ -208,6 +206,84 @@ class AuthRouteMixin(_HasConfig):
             return result
 
         return wrapped
+
+    async def auth_login_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+        try:
+            auth_info = await self.config.auth_provider.login(
+                request.body.get("username", ""),
+                request.body.get("password", ""),
+                request.body.get("otp"),
+            )
+        except MissingOTPException:
+            return AdminTableRoute.RouteResponse(
+                status_code=401,
+                body={"message": "Missing OTP"},
+                content_type="application/json",
+            )
+        except InvalidCredentialsException:
+            return AdminTableRoute.RouteResponse(
+                status_code=401,
+                body={"message": "Invalid credentials"},
+                content_type="application/json",
+            )
+        except AuthException as e:
+            return AdminTableRoute.RouteResponse(
+                status_code=401,
+                body={"message": str(e)},
+                content_type="application/json",
+            )
+        return AdminTableRoute.RouteResponse(
+            body={
+                "message": "login successful",
+                "access_token": auth_info.access_token,
+                "refresh_token": auth_info.refresh_token,
+                "capabilities": auth_info.capabilities,
+                "token_lifetime": auth_info.token_lifetime,
+            },
+            content_type="application/json",
+        )
+
+    async def auth_refresh_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+        try:
+            auth_info = await self.config.auth_provider.refresh(
+                request.body.get("token", ""),
+            )
+        except AuthException as e:
+            return AdminTableRoute.RouteResponse(
+                status_code=401,
+                body={"message": str(e)},
+                content_type="application/json",
+            )
+        return AdminTableRoute.RouteResponse(
+            body={
+                "message": "Token refresh successful",
+                "access_token": auth_info.access_token,
+                "refresh_token": auth_info.refresh_token,
+                "capabilities": auth_info.capabilities,
+                "token_lifetime": auth_info.token_lifetime,
+            },
+            content_type="application/json",
+        )
+
+    async def auth_logout_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+        try:
+            await self.config.auth_provider.logout(request.body.get("token", ""))
+        except AuthException as e:
+            return AdminTableRoute.RouteResponse(
+                status_code=400,
+                body={"message": str(e)},
+                content_type="application/json",
+            )
+        except Exception as e:
+            return AdminTableRoute.RouteResponse(
+                status_code=500,
+                body={"message": f"Internal server error: {e}"},
+                content_type="application/json",
+            )
+        return AdminTableRoute.RouteResponse(
+            body={"message": "Logout successful"},
+            content_type="application/json",
+        )
 
 
 class _Column:
@@ -512,16 +588,34 @@ class AdminTable(ListViewMixin, _HasConfig):
                 handler=self.ping_handler,
             ),
             AdminTableRoute(
-                path="/login",
+                path="/auth/login",
                 method="POST",
-                name="login",
-                handler=self.login_handler,
+                name="auth_login",
+                handler=self.auth_login_handler,
+            ),
+            AdminTableRoute(
+                path="/auth/refresh",
+                method="POST",
+                name="auth_refresh",
+                handler=self.auth_refresh_handler,
+            ),
+            AdminTableRoute(
+                path="/auth/logout",
+                method="POST",
+                name="auth_logout",
+                handler=self.auth_logout_handler,
             ),
             AdminTableRoute(
                 path="/user",
                 method="GET",
                 name="userinfo",
-                handler=self.user_handler,
+                handler=self.get_user_handler,
+            ),
+            AdminTableRoute(
+                path="/user",
+                method="PATCH",
+                name="userinfo",
+                handler=self.set_user_handler,
             ),
             AdminTableRoute(
                 path="/navigation",
@@ -671,49 +765,78 @@ class AdminTable(ListViewMixin, _HasConfig):
         ]
 
     @AuthRouteMixin.protected
-    async def user_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+    async def get_user_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+        if not request.user:
+            return AdminTableRoute.RouteResponse(
+                status_code=401,
+                body={"message": "Unauthorized"},
+                content_type="application/json",
+            )
+
+        if (get_user_info := self.config.get_user_info) is None:
+            additional_info: dict[str, Any] = {}
+        else:
+            if asyncio.iscoroutinefunction(get_user_info):
+                additional_info = await get_user_info(request.user.user_id)
+            else:
+                additional_info = cast(dict[str, Any], get_user_info(request.user.user_id))
+
         return AdminTableRoute.RouteResponse(
-            body={"user": dataclasses.asdict(request.user) if request.user else None},
+            body={
+                "user_id": request.user.user_id,
+                "display": request.user.display,
+                "capabilities": request.user.capabilities,
+                "has_profile_setting": self.config.set_user_info is not None,
+                **additional_info,
+            },
+            content_type="application/json",
+        )
+
+    @AuthRouteMixin.protected
+    async def set_user_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
+        if not request.user:
+            return AdminTableRoute.RouteResponse(
+                status_code=401,
+                body={"message": "Unauthorized"},
+                content_type="application/json",
+            )
+
+        if (set_user_info := self.config.set_user_info) is None:
+            return AdminTableRoute.RouteResponse(
+                status_code=500,
+                body={"message": "set user info not configured"},
+                content_type="application/json",
+            )
+
+        if asyncio.iscoroutinefunction(set_user_info):
+            await set_user_info(request.user.user_id, request.body)
+        else:
+            set_user_info(request.user.user_id, request.body)
+
+        if (get_user_info := self.config.get_user_info) is None:
+            additional_info = {}
+        else:
+            if asyncio.iscoroutinefunction(get_user_info):
+                additional_info = await get_user_info(request.user.user_id)
+            else:
+                additional_info = cast(dict[str, Any], get_user_info(request.user.user_id))
+
+        return AdminTableRoute.RouteResponse(
+            status_code=200,
+            body={
+                "user_id": request.user.user_id,
+                "display": request.user.display,
+                "capabilities": request.user.capabilities,
+                "has_profile_setting": self.config.set_user_info is not None,
+                **additional_info,
+            },
             content_type="application/json",
         )
 
     @AuthRouteMixin.protected
     async def ping_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         return AdminTableRoute.RouteResponse(
-            body={"message": "pong", "user": dataclasses.asdict(request.user) if request.user else None},
-            content_type="application/json",
-        )
-
-    async def login_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
-        assert self.config.auth_provider is not None, "No auth provider configured"
-        try:
-            if asyncio.iscoroutinefunction(self.config.auth_provider.authenticate):
-                user = await self.config.auth_provider.authenticate(
-                    request.body.get("username"), request.body.get("password")
-                )
-            else:
-                user = self.config.auth_provider.authenticate(
-                    request.body.get("username"), request.body.get("password")
-                )
-        except Exception as e:
-            return AdminTableRoute.RouteResponse(
-                status_code=500,
-                body={"message": f"Internal server error: {e}"},
-                content_type="application/json",
-            )
-        if isinstance(user, self.config.auth_provider.User):
-            if asyncio.iscoroutinefunction(self.config.auth_provider.generate_token):
-                token = await self.config.auth_provider.generate_token(user)
-            else:
-                token = self.config.auth_provider.generate_token(user)
-
-            return AdminTableRoute.RouteResponse(
-                body={"message": "login successful", "token": token},
-                content_type="application/json",
-            )
-        return AdminTableRoute.RouteResponse(
-            status_code=401,
-            body={"message": "login failed"},
+            body={"message": "pong", "user_id": request.user.user_id if request.user else None},
             content_type="application/json",
         )
 
@@ -1026,9 +1149,9 @@ class AdminTable(ListViewMixin, _HasConfig):
             )
         try:
             if asyncio.iscoroutinefunction(self.config.dashboard):
-                content = await self.config.dashboard(request.user)
+                content = await self.config.dashboard()
             else:
-                content = self.config.dashboard(request.user)
+                content = self.config.dashboard()
             return AdminTableRoute.RouteResponse(
                 body={"content": content},
                 content_type="application/json",

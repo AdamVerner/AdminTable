@@ -1,6 +1,5 @@
 import abc
 import dataclasses
-import random
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 from types import TracebackType
@@ -11,7 +10,6 @@ from typing import (
     Generic,
     Literal,
     Optional,
-    Protocol,
     TypeAlias,
     TypedDict,
     TypeVar,
@@ -22,49 +20,10 @@ from sqlalchemy import Column
 from sqlalchemy.orm import InstrumentedAttribute
 from typing_extensions import Doc
 
+from .auth import AuthProviderBase
+
 if TYPE_CHECKING:
     from admin_table.modules.bases.resolver import ResolverBase
-
-
-class AuthProviderType(Protocol):
-    User: type[Any]
-
-    authenticate: Callable[[str | None, str | None], Any | Awaitable[Any]]
-    generate_token: Callable[[Any], str | Awaitable[str]]
-    validate_token: Callable[[str], Any | Awaitable[Any]]
-
-
-class DefaultAuthProvider(AuthProviderType):
-    @dataclasses.dataclass
-    class User:
-        email: str
-        name: str | None = None
-        avatar: str | None = None
-
-    def authenticate(self, username: str | None, password: str | None) -> User | Literal[False]:
-        if username == "admin@admin.admin" and password == "admin@admin.admin":
-            return self.User(
-                email="admin@admin.admin",
-                name="Admin",
-                avatar=f"https://raw.githubusercontent.com/mantinedev/mantine/master/.demo/avatars/"
-                f"avatar-{random.randrange(0, 10)}.png",
-            )
-        return False
-
-    def generate_token(self, user: User) -> str:
-        """Generate secure token for the user"""
-        assert isinstance(user, self.User)
-        return user.email
-
-    def validate_token(self, token: str) -> User | Literal[False]:
-        if token == "admin@admin.admin":
-            return self.User(
-                email="admin@admin.admin",
-                name="Admin",
-                avatar=f"https://raw.githubusercontent.com/mantinedev/mantine/master/.demo/avatars/"
-                f"avatar-{random.randrange(0, 10)}.png",
-            )
-        return False
 
 
 # copied directly from source of UI library
@@ -100,13 +59,13 @@ NavigationIcon: TypeAlias = Literal[
 
 @dataclasses.dataclass
 class AdminTableConfig:
+    auth_provider: Annotated[AuthProviderBase, Doc("Type of auth provider")]
     name: Annotated[str, Doc("The name of the AdminTable")] = "AdminTable"
     icon_src: Annotated[str | None, Doc("Icon to be displayed in the navigation drawer")] = None
     version: Annotated[str | None, Doc("Current version of your application")] = None
-    auth_provider: AuthProviderType = dataclasses.field(default_factory=DefaultAuthProvider)
-    dashboard: Annotated[
-        Callable[[DefaultAuthProvider.User], str | Awaitable[str]], Doc("Function generating the dashboard content")
-    ] = dataclasses.field(default=lambda u: f"# Dashboard\n\nWelcome {u.email} to AdminTable")
+    dashboard: Annotated[Callable[[], str | Awaitable[str]], Doc("Function generating the dashboard content")] = (
+        dataclasses.field(default=lambda: "# Dashboard\n\nWelcome to AdminTable")
+    )
     resources: list["Resource"] = dataclasses.field(default_factory=list)
     pages: list["Page"] = dataclasses.field(default_factory=list)
     navigation_icons: Annotated[
@@ -122,6 +81,20 @@ class AdminTableConfig:
     ] = dataclasses.field(default_factory=list)
     live_data_manager: Annotated[
         type["LiveDataManagerBase"] | None, Doc("Live data manager to be used for live data updates")
+    ] = None
+    get_user_info: Annotated[
+        Callable[[str], dict[str, Any] | Awaitable[dict[str, Any]]] | None,
+        Doc(
+            "Function which returns information about the user associated with the provided user_id."
+            " Currently 'avatar_src' and 'email' keys are expected."
+        ),
+    ] = None
+    set_user_info: Annotated[
+        Callable[[str, dict[str, Any]], Awaitable[None] | None] | None,
+        Doc(
+            "Function which sets information about the user associated with the provided user_id."
+            " Currently 'avatar_src' and 'email' keys are expected."
+        ),
     ] = None
 
 

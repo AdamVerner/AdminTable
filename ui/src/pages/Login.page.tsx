@@ -32,7 +32,7 @@ export const LoginPage = () => {
     },
 
     validate: {
-      email: (value) => (/^\S+@\S+$/.test(value) ? null : 'Invalid email'),
+      email: (value) => (/^\S+$/.test(value) ? null : 'Invalid email'),
       password: (value) => (value.length > 0 ? null : 'Password is required'),
     },
   });

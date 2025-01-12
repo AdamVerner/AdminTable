@@ -19,6 +19,7 @@ from starlette.responses import RedirectResponse
 from typing_extensions import Doc
 
 from admin_table import AdminTable, AdminTableConfig, Resource, ResourceViews
+from admin_table.auth import DummyAuthProvider
 from admin_table.config import (
     CreateView,
     DetailView,
@@ -160,14 +161,40 @@ async def create_user_function(model: Any) -> Any:
     return user
 
 
+user_info_store = {}
+
+
+async def get_user_info(user_id: str) -> dict[str, Any]:
+    return user_info_store.get(
+        user_id,
+        {
+            "avatar_src": icon_src,
+            "email": user_id,
+        },
+    )
+
+
+async def set_user_info(user_id: str, new_info: dict[str, Any]) -> None:
+    user_info_store.setdefault(
+        user_id,
+        {
+            "avatar_src": icon_src,
+            "email": user_id,
+        },
+    ).update(new_info)
+
+
 icon_data = open(os.path.join(os.path.dirname(__file__), "icon.png"), "rb").read()
 icon_src = f"data:{'image/png'};base64,{base64.b64encode(icon_data).decode()}"
 config = AdminTableConfig(
     name="Simple Admin Table example",
-    dashboard=lambda u: f"# Dashboard\n\nWelcome {u.email} to Simple Example of TableAPI\n\n"
-    f"Checkout input form at [test_form](./#forms/test_form?field1=prefilled%20value)\n\n",
+    dashboard=lambda: "# Dashboard\n\nWelcome to Simple Example of TableAPI\n\n"
+    "Checkout input form at [test_form](./#forms/test_form?field1=prefilled%20value)\n\n",
     icon_src=icon_src,
     version="dev",
+    auth_provider=DummyAuthProvider(),
+    get_user_info=get_user_info,
+    set_user_info=set_user_info,
     resources=[
         Resource(
             navigation="Users",
