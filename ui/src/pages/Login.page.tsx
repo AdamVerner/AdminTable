@@ -15,11 +15,13 @@ import {
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { authService } from '@/services/auth';
+import { useUserInfoStore } from '@/stores/user.store';
 
 export const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const load_user_info = useUserInfoStore((state) => state.load_user_info);
 
   const from = location?.state?.from ?? { pathname: '/' };
 
@@ -40,6 +42,7 @@ export const LoginPage = () => {
   const handleSubmit = async (values: { email: string; password: string }) => {
     try {
       await authService.login(values.email, values.password);
+      await load_user_info();
       notifications.show({
         title: 'Authentication Success',
         message: `You have been successfully authenticated. Redirecting to ${decodeURI(from?.pathname)}`,

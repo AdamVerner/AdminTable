@@ -14,5 +14,5 @@ poetry run python -m example.fastapi_simple
 
 ### Development
 #### Publishing
-from root of the project run `./scripts/build.sh` to build the project and publish it.
+from root of the project run `./scripts/build.sh` to build the project.
 To publish the project to pypi, run `poetry publish`

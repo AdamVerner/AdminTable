@@ -2,7 +2,7 @@
   "name": "admin_table-frontend",
   "private": true,
   "type": "module",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "scripts": {
     "dev": "VITE_API_URL=http://localhost:8000/api/admin/ vite",
     "build": "tsc && vite build",
@@ -15,7 +15,7 @@
     "prettier:write": "prettier --write \"**/*.{ts,tsx}\"",
     "vitest": "vitest run",
     "vitest:watch": "vitest",
-    "test": "npm run typecheck && npm run prettier && npm run lint && npm run vitest && npm run build",
+    "test": "npm run typecheck && npm run prettier && npm run lint && npm run vitest",
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build"
   },

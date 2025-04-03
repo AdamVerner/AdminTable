@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { IconEye } from '@tabler/icons-react';
 import { Anchor, Code, Group, Modal, Text, Title, TypographyStylesProvider } from '@mantine/core';
 import { MarkdownPage } from '@/components/MarkdownPage';
@@ -32,8 +32,6 @@ export default ({ title, value: value_ }: ExtendableProps) => {
   } else {
     value = value_;
   }
-
-  console.log('value', title, typeof value, value);
 
   const BREAK = 25;
   // exception for UUIDs

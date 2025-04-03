@@ -243,6 +243,10 @@ class DummyAuthProvider(AuthProviderBase):
     async def authenticate(
         self, username: str | None, password: str | None, otp: str | None
     ) -> AuthProviderBase.UserInfo:
+        if not username:
+            raise InvalidCredentialsException("Username is required")
+        if not password:
+            raise InvalidCredentialsException("Password is required")
         return self.UserInfo(user_id=username, display=username)
 
     async def authorize(self, user_id: str) -> list[str]:
