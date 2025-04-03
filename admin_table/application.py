@@ -6,6 +6,7 @@ import os.path
 import string
 import sys
 from collections.abc import Awaitable, Callable, Iterable, Sequence
+from contextvars import ContextVar
 from inspect import Parameter, signature
 from typing import Any, Literal, Protocol, TypedDict, cast
 from urllib.parse import quote, unquote
@@ -16,6 +17,7 @@ from starlette.datastructures import ImmutableMultiDict
 from .auth import AuthException, AuthProviderBase, InvalidCredentialsException, MissingOTPException
 from .config import (
     AdminTableConfig,
+    CapabilitiesMixin,
     CreateView,
     DetailView,
     GetGraphCallback,
@@ -32,6 +34,9 @@ from .config import (
     Resource,
 )
 from .modules.bases import ResolverBase
+
+# Create context variable for current user
+current_user: ContextVar[AuthProviderBase.AuthorizedUserInfo | None] = ContextVar("current_user", default=None)
 
 
 @dataclasses.dataclass
@@ -202,10 +207,34 @@ class AuthRouteMixin(_HasConfig):
             if response is not None:
                 return response
 
-            result = await handler(admin_table, request)
-            return result
+            # Set the current user in the context
+            token = current_user.set(request.user)
+            try:
+                result = await handler(admin_table, request)
+                return result
+            finally:
+                # Reset the context variable
+                current_user.reset(token)
 
         return wrapped
+
+    def check_capabilities(self, resource: CapabilitiesMixin) -> AdminTableRoute.RouteResponse | None:
+        user = current_user.get()
+        if user is None:
+            return AdminTableRoute.RouteResponse(
+                status_code=401,
+                body={"message": "Unauthorized - missing token"},
+                content_type="application/json",
+            )
+        if not resource.capabilities:
+            return None
+        if set(user.capabilities).issuperset(resource.capabilities):
+            return None
+        return AdminTableRoute.RouteResponse(
+            status_code=403,
+            body={"message": "Forbidden - missing capabilities"},
+            content_type="application/json",
+        )
 
     async def auth_login_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         try:
@@ -465,6 +494,9 @@ class ListViewMixin(AuthRouteMixin, _HasConfig):
     async def resource_list_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         resource = self.get_resource(request.path_params["resource"])
         view = self.get_view_list(resource)
+
+        if (response := (self.check_capabilities(resource) or self.check_capabilities(view))) is not None:
+            return response
 
         current_page = int(request.query_params.get("page", 1) or 1)
         current_per_page = int(request.query_params.get("per_page", 50) or 50)
@@ -866,7 +898,11 @@ class AdminTable(ListViewMixin, _HasConfig):
                                 "type": "resource",
                             }
                             for resource in self.config.resources
-                            if resource.navigation == drawer and not resource.hidden
+                            if resource.navigation == drawer
+                            and not resource.hidden
+                            and resource.views.list is not None
+                            and (self.check_capabilities(resource) is None)
+                            and (self.check_capabilities(resource.views.list) is None)
                         ]
                         + [
                             {
@@ -876,7 +912,7 @@ class AdminTable(ListViewMixin, _HasConfig):
                                 "type": "page",
                             }
                             for page in self.config.pages
-                            if page.navigation == drawer
+                            if page.navigation == drawer and (page.public or (self.check_capabilities(page) is None))
                         ],
                     }
                     for drawer in drawers
@@ -889,9 +925,15 @@ class AdminTable(ListViewMixin, _HasConfig):
         page = self.get_page(request.path_params["page_name"])
 
         # check request authentication for non-public forms
-        response = await AuthRouteMixin.check_request(self, request)
-        if not page.public and response is not None:
-            return response
+        if not page.public:
+            response = await AuthRouteMixin.check_request(self, request)
+            if response is not None:
+                return response
+            current_user.set(request.user)
+
+            response = AuthRouteMixin.check_capabilities(self, page)
+            if response is not None:
+                return response
 
         return AdminTableRoute.RouteResponse(
             body={
@@ -910,6 +952,9 @@ class AdminTable(ListViewMixin, _HasConfig):
         resource = self.get_resource(request.path_params["resource"])
         view = self.get_view_create(resource)
 
+        if (response := (self.check_capabilities(resource) or self.check_capabilities(view))) is not None:
+            return response
+
         return AdminTableRoute.RouteResponse(
             body={
                 "schema": view.schema.model_json_schema(),
@@ -921,6 +966,9 @@ class AdminTable(ListViewMixin, _HasConfig):
     async def resource_create_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         resource = self.get_resource(request.path_params["resource"])
         view = self.get_view_create(resource)
+
+        if (response := (self.check_capabilities(resource) or self.check_capabilities(view))) is not None:
+            return response
 
         try:
             data = view.schema(**request.body)
@@ -942,6 +990,9 @@ class AdminTable(ListViewMixin, _HasConfig):
     async def resource_detail_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         resource = self.get_resource(request.path_params["resource"])
         detail = self.get_view_detail(resource)
+
+        if (response := (self.check_capabilities(resource) or self.check_capabilities(detail))) is not None:
+            return response
 
         if asyncio.iscoroutinefunction(resolve_detail := resource.resolver.resolve_detail):
             entry = await resolve_detail(resource, request.path_params["detail_id"])
@@ -1042,6 +1093,12 @@ class AdminTable(ListViewMixin, _HasConfig):
     async def resource_graph_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         resource = self.get_resource(request.path_params["resource"])
         detail = self.get_view_detail(resource)
+
+        # check detail capabilities
+        # TODO capabilities for graph
+        if (response := (self.check_capabilities(resource) or self.check_capabilities(detail))) is not None:
+            return response
+
         data_function: GetGraphCallback | None = next(
             (g for g in detail.graphs if g.__name__ == request.path_params["graph_ref"]), None
         )
@@ -1105,6 +1162,11 @@ class AdminTable(ListViewMixin, _HasConfig):
         resource = self.get_resource(request.path_params["resource"])
         detail = self.get_view_detail(resource)
 
+        if (response := (self.check_capabilities(resource) or self.check_capabilities(detail))) is not None:
+            return response
+
+        # TODO capabilities for separate actions
+
         action = next((a for a in detail.actions if a.__name__ == request.path_params["action_ref"]), None)
         if not action:
             return AdminTableRoute.RouteResponse(
@@ -1141,12 +1203,6 @@ class AdminTable(ListViewMixin, _HasConfig):
 
     @AuthRouteMixin.protected
     async def dashboard_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
-        if not request.user:
-            return AdminTableRoute.RouteResponse(
-                status_code=401,
-                body={"message": "Unauthorized"},
-                content_type="application/json",
-            )
         try:
             if asyncio.iscoroutinefunction(self.config.dashboard):
                 content = await self.config.dashboard()
@@ -1167,7 +1223,7 @@ class AdminTable(ListViewMixin, _HasConfig):
         form = self.get_input_form(request.path_params["location"])
 
         # check request authentication for non-public forms
-        response = await AuthRouteMixin.check_request(self, request)
+        response = (await AuthRouteMixin.check_request(self, request)) or self.check_capabilities(form)
         if not form.public and response is not None:
             return response
 
@@ -1188,7 +1244,7 @@ class AdminTable(ListViewMixin, _HasConfig):
         form = self.get_input_form(request.path_params["location"])
 
         # check request authentication for non-public forms
-        response = await AuthRouteMixin.check_request(self, request)
+        response = (await AuthRouteMixin.check_request(self, request)) or self.check_capabilities(form)
         if not form.public and response is not None:
             return response
 

@@ -4,13 +4,12 @@
 ### Running the examples
 First install dependencies neccessary to run the examples
 ```bash
-pip install admin_table
-pip install uvicorn sqlalchemy fastapi[standard]
+poetry install --all-groups --no-root
 ```
 
 Then run the examples
 ```bash
-poetry run python examples/fastapi_simple.py
+poetry run python -m example.fastapi_simple
 ```
 
 ### Development

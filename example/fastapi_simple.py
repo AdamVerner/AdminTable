@@ -1,3 +1,4 @@
+#! /usr/bin/env python3
 import asyncio
 import base64
 import json
@@ -227,6 +228,7 @@ config = AdminTableConfig(
                     ],
                 ),
                 detail=DetailView(
+                    capabilities=["superuser"],
                     title='Details of user "${email}"',
                     description=lambda d: f"Details of user {d.get('email', '')}",
                     fields=[
@@ -354,8 +356,16 @@ config = AdminTableConfig(
         Page(
             name="Iframe page",
             navigation="Custom Pages",
-            content='<iframe src="https://www.google.com" style="width: 100%; height: 100%; border: none;"></iframe>',
+            content="Displaying pages in Iframe can be a bit tricky as the page has to have correct X-Frame-Options header set to allow embedding. Here we display the current AdminTable which suffices for sameorigin (default) policy. "
+            '<iframe src="/" style="width: 100%; height: 100%; border: 2px solid red;"></iframe>',
             type="html",
+        ),
+        Page(
+            name="Super secret page",
+            navigation="Custom Pages",
+            content=lambda request: f"# Super secret page\n\nThis page should only be visible to 'admin@admin.admin', which has 'superuser' capability returned by the DummyAuthProvider {request.headers.get('Authorization')}",
+            type="markdown",
+            capabilities=["superuser"],
         ),
     ],
     navigation_icons={

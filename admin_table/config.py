@@ -57,6 +57,11 @@ NavigationIcon: TypeAlias = Literal[
 ]
 
 
+@dataclasses.dataclass(kw_only=True)
+class CapabilitiesMixin:
+    capabilities: Annotated[list[str] | None, Doc("Capabilities required to access the resource")] = None
+
+
 @dataclasses.dataclass
 class AdminTableConfig:
     auth_provider: Annotated[AuthProviderBase, Doc("Type of auth provider")]
@@ -99,7 +104,7 @@ class AdminTableConfig:
 
 
 @dataclasses.dataclass
-class Navigable:
+class Navigable(CapabilitiesMixin):
     name: Annotated[str, Doc("Unique name of the resource")]
     navigation: Annotated[
         str | None,
@@ -122,9 +127,12 @@ class Resource(Navigable):
 
 @dataclasses.dataclass(kw_only=True)
 class Page(Navigable):
-    content: Annotated[str | Callable[..., str], Doc("static content of function generating content")]
+    content: Annotated[str | Callable[..., str], Doc("static content or function generating content")]
     type: Annotated[Literal["html", "markdown"], Doc("Type of the content")] = "markdown"
-    public: Annotated[bool, Doc("If the page should be public or private")] = False
+    public: Annotated[
+        bool,
+        Doc("If the page should be public or private. if set to True, capabilities are ignored."),
+    ] = False
 
 
 @dataclasses.dataclass
@@ -137,7 +145,7 @@ class ResourceViews:
 
 
 @dataclasses.dataclass
-class ViewBase:
+class ViewBase(CapabilitiesMixin):
     title: Annotated[str | None, Doc("Title of the view")] = None
     description: Annotated[
         Callable[..., str] | str | None,
@@ -388,7 +396,7 @@ class DetailView(ViewBase):
 
 
 @dataclasses.dataclass(kw_only=True)
-class InputForm:
+class InputForm(CapabilitiesMixin):
     location: Annotated[str, Doc("Location used to access the form. Must be unique and html-encoded")]
     public: Annotated[bool, Doc("If the form should be public or private")] = False
     title: Annotated[str, Doc("Title of the form")]

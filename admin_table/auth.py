@@ -243,7 +243,9 @@ class DummyAuthProvider(AuthProviderBase):
     async def authenticate(
         self, username: str | None, password: str | None, otp: str | None
     ) -> AuthProviderBase.UserInfo:
-        return self.UserInfo(user_id="admin", display="Dummy Admin")
+        return self.UserInfo(user_id=username, display=username)
 
     async def authorize(self, user_id: str) -> list[str]:
+        if user_id == "admin@admin.admin":
+            return ["admin", "superuser"]
         return ["admin"]

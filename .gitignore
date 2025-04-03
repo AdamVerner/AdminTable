@@ -156,3 +156,5 @@ cython_debug/
 
 dist
 .idea
+.DS_Store
+.vscode
