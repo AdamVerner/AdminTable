@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "admin-table"
-version = "0.0.28"
+version = "0.0.29"
 description = "Another Dashboard Library for displaying mostly tables"
 readme = "README.md"
 license = "MIT"
@@ -24,6 +24,7 @@ fastapi = {extras = ["standard"], version = "^0.114.0"}
 ruff = "^0.6.4"
 sqlalchemy = "^2.0.34"
 mypy = "^1.11.2"
+aiosqlite = "^0.21.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

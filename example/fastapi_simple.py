@@ -5,6 +5,7 @@ import json
 import os.path
 import random
 from collections.abc import AsyncIterable
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from random import randrange
 from typing import Annotated, Any
@@ -40,8 +41,8 @@ from admin_table.modules import SQLAlchemyResolver
 from admin_table.modules.bases import ResolverBase
 from admin_table.wrappers import FastAPIWrapper
 
-from .base import Base, SessionLocal, engine
-from .models import Item, User
+from .base import SessionLocal
+from .models import Item, User, generate_data
 
 
 def custom_user_action(
@@ -405,28 +406,17 @@ config = AdminTableConfig(
 )
 
 
-# generate models and insert some data
-Base.metadata.create_all(bind=engine)
-
-with SessionLocal() as session:
-    session.add(u1 := User(email=f"{random.randint(10, 10**10)}@email.local"))
-    session.add(u2 := User(email=f"{random.randint(10, 10**10)}@email.local"))
-    session.flush()
-    session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u1.id))
-    session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u1.id, public=False))
-    session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u1.id, public=False))
-    session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u2.id))
-    session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u2.id))
-    session.add(Item(title=f"item {random.randint(10, 10**10)}", owner_id=u2.id))
-    session.add(Item(title=f"item {random.randint(10, 10**10)}"))
-    session.add(Item(title=f"item {random.randint(10, 10**10)}"))
-    session.add(Item(title=f"other item {random.randint(10, 10**10)}", owner_id=u2.id, public=False))
-    session.commit()
-
-
 at = AdminTable(config=config)
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Load the ML model
+    await generate_data()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 # noinspection PyTypeChecker
 app.add_middleware(
     CORSMiddleware,
@@ -439,4 +429,5 @@ app.mount("/api/admin", FastAPIWrapper(at))
 app.get("/")(lambda: RedirectResponse("/api/admin/", status_code=status.HTTP_307_TEMPORARY_REDIRECT))
 
 if __name__ == "__main__":
+    asyncio.run(generate_data())
     uvicorn.run("example.fastapi_simple:app", reload_dirs="./", reload=True)

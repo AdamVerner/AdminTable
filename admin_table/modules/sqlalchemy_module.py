@@ -3,8 +3,8 @@ import dataclasses
 from collections.abc import Callable, Generator
 from typing import Annotated, Any, Literal, cast
 
-import sqlalchemy.exc
 from sqlalchemy import BinaryExpression, ColumnElement, Row, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import (
     ColumnProperty,
     DeclarativeBase,
@@ -24,19 +24,27 @@ SQLAlchemyListView_FieldType = str | InstrumentedAttribute | Query | ColumnEleme
 
 class SQLAlchemyResolver(ResolverBase):
     model: type[DeclarativeBase]
+    async_session_maker: Callable[[], AsyncSession] | None = None
+    session_maker: Callable[[], Session] | None = None
 
     def __init__(
         self,
-        session: Annotated[Callable[[], Session], Doc("Function called at runtime which should provide a session")],
+        session: Annotated[
+            Callable[[], Session | AsyncSession],
+            Doc("Function called at runtime which should provide a session"),
+        ],
         model: Annotated[type[DeclarativeBase], Doc("Base model from which the attributes will be selected")],
         extra_cols: Annotated[
             dict[str, Query | ColumnElement | InstrumentedAttribute] | None,
             Doc("Extra columns to be added to the list view"),
         ] = None,
     ):
-        self.session_maker = session
         self.model = model
         self.extra_cols = extra_cols or {}
+        if isinstance(session(), AsyncSession):
+            self.async_session_maker = cast(Callable[[], AsyncSession], session)
+        else:
+            self.session_maker = cast(Callable[[], Session], session)
 
     @dataclasses.dataclass
     class __ListColumns:
@@ -130,7 +138,7 @@ class SQLAlchemyResolver(ResolverBase):
         # make_transient_to_detached(entity)
         return cast(dict[str, str], entity)
 
-    def resolve_list(
+    async def resolve_list(
         self,
         resource: "Resource",
         page: int,
@@ -148,15 +156,22 @@ class SQLAlchemyResolver(ResolverBase):
         list_select = base_select.limit(per_page).offset((page - 1) * per_page).order_by(select_sort)
 
         # execute queries
-        with self.session_maker() as session:
-            total = session.execute(select(count()).select_from(base_select.subquery())).scalar()
-            rows = session.execute(list_select).fetchall()
+        if self.async_session_maker:
+            async with self.async_session_maker() as session:
+                total = await session.scalar(select(count()).select_from(base_select.subquery()))
+                rows = (await session.execute(list_select)).fetchall()
+        elif self.session_maker:
+            with self.session_maker() as session:
+                total = session.execute(select(count()).select_from(base_select.subquery())).scalar()
+                rows = session.execute(list_select).fetchall()
+        else:
+            raise RuntimeError("No session maker provided")
 
-            list_data: list[dict[str, str]] = []
+        list_data: list[dict[str, str]] = []
 
-            for row in rows:
-                entity = self._make_entity(row, attributes)
-                list_data.append(cast(dict[str, str], entity))  # type: ignore
+        for row in rows:
+            entity = self._make_entity(row, attributes)
+            list_data.append(cast(dict[str, str], entity))  # type: ignore
 
         # parse data into a dictionary
         return self.ResolvedListData(
@@ -164,23 +179,28 @@ class SQLAlchemyResolver(ResolverBase):
             pagination={"page": page, "per_page": per_page, "total": total or 0},
         )
 
-    def resolve_detail(self, resource: "Resource", entry_id: str) -> ResolvedData | None:
+    async def resolve_detail(self, resource: "Resource", entry_id: str) -> ResolvedData | None:
         """Resolve data of a single entry"""
         attributes = self.__resolve_model_attributes(resource)
         assert resource.id_col in attributes, f'Model does not have id col: "{resource.id_col}'
         col_src: InstrumentedAttribute = attributes[resource.id_col].src
         casted_id = col_src.type.python_type(entry_id)
 
-        base_select = select(*[col.src for col in attributes.values()]).filter(col_src == casted_id)
+        base_select = select(*[col.src for col in attributes.values()]).filter(col_src == casted_id).limit(1)
 
-        with self.session_maker() as session:
-            try:
-                entry = session.execute(base_select).one()
-            except sqlalchemy.exc.NoResultFound:
-                return None
+        if self.async_session_maker:
+            async with self.async_session_maker() as session:
+                entry = (await session.execute(base_select)).first()
+        elif self.session_maker:
+            with self.session_maker() as session:
+                entry = session.execute(base_select).first()
+        else:
+            raise RuntimeError("No session maker provided")
 
-            entity = self._make_entity(entry, attributes)
+        if entry is None:
+            return None
 
+        entity = self._make_entity(entry, attributes)
         return entity  # type: ignore
 
     def get_filter_options(self, resource: "Resource") -> dict[str, ResolverBase.FilterOption]:

@@ -535,22 +535,13 @@ class ListViewMixin(AuthRouteMixin, _HasConfig):
             )
         header.extend(field_resolver(view.fields))
 
-        if asyncio.iscoroutinefunction(resource.resolver.resolve_list):
-            data = await resource.resolver.resolve_list(
-                resource,
-                current_page,
-                current_per_page,
-                current_filters + (view.hidden_filters or []),
-                current_sort,
-            )
-        else:
-            data = resource.resolver.resolve_list(
-                resource,
-                current_page,
-                current_per_page,
-                current_filters + (view.hidden_filters or []),
-                current_sort,
-            )
+        data = await resource.resolver.resolve_list(
+            resource,
+            current_page,
+            current_per_page,
+            current_filters + (view.hidden_filters or []),
+            current_sort,
+        )
 
         # ##### PROCESS DATA INTO COLUMN FORMAT
         rows = [[await h.value(row) for h in header] for row in data.list_data]
@@ -994,10 +985,7 @@ class AdminTable(ListViewMixin, _HasConfig):
         if (response := (self.check_capabilities(resource) or self.check_capabilities(detail))) is not None:
             return response
 
-        if asyncio.iscoroutinefunction(resolve_detail := resource.resolver.resolve_detail):
-            entry = await resolve_detail(resource, request.path_params["detail_id"])
-        else:
-            entry = resolve_detail(resource, request.path_params["detail_id"])
+        entry = await resource.resolver.resolve_detail(resource, request.path_params["detail_id"])
 
         if entry is None:
             return AdminTableRoute.RouteResponse(
@@ -1090,6 +1078,7 @@ class AdminTable(ListViewMixin, _HasConfig):
             content_type="application/json",
         )
 
+    @AuthRouteMixin.protected
     async def resource_graph_handler(self, request: AdminTableRoute.RouteRequest) -> AdminTableRoute.RouteResponse:
         resource = self.get_resource(request.path_params["resource"])
         detail = self.get_view_detail(resource)
@@ -1110,10 +1099,7 @@ class AdminTable(ListViewMixin, _HasConfig):
                 content_type="application/json",
             )
         detail_id = request.path_params["detail_id"]
-        if asyncio.iscoroutinefunction(resolve_detail := resource.resolver.resolve_detail):
-            entry = await resolve_detail(resource, detail_id)
-        else:
-            entry = resolve_detail(resource, detail_id)
+        entry = await resource.resolver.resolve_detail(resource, detail_id)
 
         if entry is None:
             return AdminTableRoute.RouteResponse(
@@ -1174,7 +1160,7 @@ class AdminTable(ListViewMixin, _HasConfig):
                 body={"message": f"Invalid action ref: {request.path_params["action_ref"]}", "failed": True},
                 content_type="application/json",
             )
-        entry = resource.resolver.resolve_detail(resource, request.path_params["detail_id"])
+        entry = await resource.resolver.resolve_detail(resource, request.path_params["detail_id"])
 
         if entry is None:
             return AdminTableRoute.RouteResponse(
